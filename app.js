@@ -1,8 +1,10 @@
-// ======================== app.js — 主线程核心逻辑 v3.5.4 ========================
+// ======================== app.js — 主线程核心逻辑 v3.5.6 ========================
 // 变更记录：
 // 1) 开奖自动刷新：21:33:30 起每5秒刷新，开奖完成停止
 // 2) 新增彩色水泡粒子背景特效（initParticles）
 // 3) 保留 v3.5.3 全部审查修复（去重修复、缓存复用、z-index、内存泄漏、并发锁等）
+// 4) v3.5.5: 直播时段拦截 + 源独立超时 + 抽屉自动触发
+// 5) v3.5.6: 粒子帧率独立/后台彻底暂停、飞入防堆积、直播倒计时、状态7天过期、Worker兜底
 (function () {
   "use strict";
 
@@ -19,6 +21,11 @@
   const HISTORY_PAGE_SIZE = 15;
   const LS_KEY = "shenma_v4_state";
   const LS_CACHE_KEY = "shenma_v4_lottery_cache";
+
+  const LIVE_WINDOW = {
+    startH: 21, startM: 33,
+    endH: 21, endM: 35
+  };
 
   // ======================== DOM 缓存 ========================
   const DOM = {};
@@ -75,7 +82,8 @@
     try {
       localStorage.setItem(LS_KEY, JSON.stringify({
         killNums: state.killNums,
-        selectedFilters: state.selectedFilters
+        selectedFilters: state.selectedFilters,
+        _t: Date.now()
       }));
     } catch (e) {}
   }
@@ -85,6 +93,11 @@
       if (!raw) return;
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== "object") return;
+      // 7天过期清理
+      if (parsed._t && (Date.now() - parsed._t > 7 * 86400000)) {
+        localStorage.removeItem(LS_KEY);
+        return;
+      }
       if (Array.isArray(parsed.killNums)) {
         state.killNums = parsed.killNums.filter(function (n) {
           return Number.isInteger(n) && n >= 1 && n <= 49;
@@ -126,10 +139,6 @@
     }, 2000);
   }
 
-  /**
-   * 解析输入文本，提取号码与生肖
-   * v3.5.3+ 修复：移除错误去重，保留原始重复频次，使 rawCount 统计真实
-   */
   function parseInputCount(input) {
     if (!input || !input.trim()) return { nums: [], truncated: false };
     let cleaned = input.replace(/《.*?》/g, " ").replace(/[^0-9鼠牛虎兔龙蛇马羊猴鸡狗猪]/g, " ")
@@ -205,9 +214,6 @@
     return function () { return false; };
   }
 
-  /**
-   * 主线程 fallback 分析：复用 getMatchFuncs 缓存，避免重复编译
-   */
   function computeAnalysisMainThread(input, killNums, filters) {
     const nums = parseInputCount(input).nums;
     const rawCount = new Uint16Array(50);
@@ -281,6 +287,11 @@
   let lastUniqueNum = null;
 
   function launchUniqueFlyEffect(targetNum, colorClass) {
+    // 清理旧的飞行球和轨迹，防止堆积
+    document.querySelectorAll(".flying-unique-ball, .flying-trail").forEach(function (el) {
+      el.remove();
+    });
+
     const targetEl = DOM.result.querySelector('[data-num="' + targetNum + '"]');
     if (!targetEl) return;
 
@@ -520,6 +531,9 @@
       renderResult(res.adjustedCount, res.adjustedTotal, res.unique, res.hitCounts, res.rawCount);
     } catch (err) {
       console.error("runAnalysisMainThread error:", err);
+      if (DOM.result) {
+        DOM.result.innerHTML = '<div class="text-center py-8 text-red-400">分析引擎异常，请刷新重试</div>';
+      }
     }
   }
 
@@ -944,6 +958,11 @@
           if (sel) sel.dispatchEvent(new Event("change"));
         }, 50);
       }
+      if (type === "live") {
+        setTimeout(function () {
+          connectLiveSource(0);
+        }, 100);
+      }
     },
     close: function () {
       destroyLivePlayer();
@@ -1122,7 +1141,6 @@
   let liveSourceIndex = 0;
   let liveSourceTimer = null;
   let liveSwitchLock = false;
-  const LIVE_SOURCE_TIMEOUT = 15000;
 
   const LIVE_SOURCES = [
     { name: "API获取", type: "auto", url: "" },
@@ -1130,25 +1148,66 @@
     { name: "FLV源1", type: "flv", url: "https://media.macaumarksix.com/live/marksix.flv" }
   ];
 
+  function getSourceTimeout(idx) {
+    if (idx === 0) return 10000;
+    if (idx === 1) return 3000;
+    return 15000;
+  }
+
+  function getLiveWindowStatus() {
+    const now = new Date();
+    const sec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+    const start = LIVE_WINDOW.startH * 3600 + LIVE_WINDOW.startM * 60;
+    const end   = LIVE_WINDOW.endH   * 3600 + LIVE_WINDOW.endM   * 60;
+    if (sec >= start && sec <= end) return { ok: true, wait: 0 };
+    if (sec < start) return { ok: false, wait: start - sec };
+    return { ok: false, wait: null };
+  }
+
   function clearLiveTimer() {
     if (liveSourceTimer) { clearTimeout(liveSourceTimer); liveSourceTimer = null; }
   }
 
   function connectLiveSource(idx) {
     if (liveSwitchLock) return;
+
+    const status = getLiveWindowStatus();
+    if (!status.ok) {
+      const loading = document.getElementById("live-loading");
+      const error   = document.getElementById("live-error");
+      if (loading) loading.classList.add("dhidden");
+      if (error) {
+        error.classList.remove("dhidden");
+        let msg;
+        if (status.wait !== null) {
+          const m = Math.floor(status.wait / 60);
+          const s = status.wait % 60;
+          msg = "距离开播还有 " + m + "分" + (s < 10 ? "0" : "") + s + "秒";
+        } else {
+          msg = "本期直播已结束，请等待下期";
+        }
+        error.innerHTML = '<div style="text-align:center; padding:24px;">' +
+          '<svg width="48" height="48" style="color:#fbbf24; margin:0 auto 12px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>' +
+          '<p style="color:#fbbf24; font-weight:bold; margin-bottom:8px;">⏰ 非直播时段</p>' +
+          '<p style="color:#9ca3af; font-size:12px;">' + msg + '</p>' +
+          '</div>';
+      }
+      return;
+    }
+
     liveSwitchLock = true;
     clearLiveTimer();
 
-    const video = document.getElementById("live-video");
+    const video   = document.getElementById("live-video");
     const loading = document.getElementById("live-loading");
-    const error = document.getElementById("live-error");
-    const status = document.getElementById("live-status");
+    const error   = document.getElementById("live-error");
+    const status  = document.getElementById("live-status");
     if (!video) { liveSwitchLock = false; return; }
 
     destroyLivePlayer();
     if (loading) loading.classList.remove("dhidden");
-    if (error) error.classList.add("dhidden");
-    if (status) status.textContent = "正在连接 " + LIVE_SOURCES[idx].name + "...";
+    if (error)   error.classList.add("dhidden");
+    if (status)  status.textContent = "正在连接 " + LIVE_SOURCES[idx].name + "...";
 
     const src = LIVE_SOURCES[idx];
 
@@ -1156,7 +1215,7 @@
       console.warn("直播源加载超时: " + src.name);
       liveSwitchLock = false;
       tryNextSource();
-    }, LIVE_SOURCE_TIMEOUT);
+    }, getSourceTimeout(idx));
 
     if (src.type === "auto") {
       fetch("https://macaumarksix.com/api/live2?_t=" + Date.now())
@@ -1290,6 +1349,7 @@
 
   function destroyLivePlayer() {
     clearLiveTimer();
+    liveSwitchLock = false;
     if (currentHls) { currentHls.destroy(); currentHls = null; }
     if (currentFlvPlayer) { currentFlvPlayer.destroy(); currentFlvPlayer = null; }
     const video = document.getElementById("live-video");
@@ -1298,24 +1358,21 @@
 
   // ======================== 自动刷新（v3.5.4：21:33:30起每5秒） ========================
   function initAutoRefresh() {
-    // 每秒检查是否在开奖窗口内，但只在窗口内每5秒实际发一次请求
     setInterval(function () {
       if (isCurrentDrawComplete || isFetchingLottery) return;
       const now = new Date();
       const h = now.getHours(), m = now.getMinutes(), s = now.getSeconds();
       const totalSec = h * 3600 + m * 60 + s;
-      const startSec = 21 * 3600 + 33 * 60 + 30; // 21:33:30
-      const endSec = 21 * 3600 + 35 * 60 + 0;    // 21:35:00
+      const startSec = 21 * 3600 + 33 * 60 + 30;
+      const endSec = 21 * 3600 + 35 * 60 + 0;
 
       if (document.visibilityState === "visible" && totalSec >= startSec && totalSec <= endSec) {
         const nowTs = Date.now();
-        // 确保两次自动刷新间隔至少5秒
         if (!window._lastAutoFetchTime || (nowTs - window._lastAutoFetchTime) >= 5000) {
           window._lastAutoFetchTime = nowTs;
           fetchLottery();
         }
       } else {
-        // 离开开奖窗口后重置计时器，下次进入时立即触发第一次
         window._lastAutoFetchTime = 0;
       }
     }, 1000);
@@ -1328,7 +1385,9 @@
     const ctx = canvas.getContext("2d");
     let width, height;
     let particles = [];
-    const MAX_PARTICLES = 60; // 低端设备友好数量，平衡视觉效果与性能
+    const MAX_PARTICLES = 60;
+    let frameId = null;
+    let lastTime = 0;
 
     function resize() {
       width = window.innerWidth;
@@ -1338,60 +1397,51 @@
     }
 
     function createParticle(yOverride) {
-      const speedY = Math.random() * 0.8 + 0.3;   // 上升速度 0.3-1.1
-      const speedX = (Math.random() - 0.5) * 0.4; // 轻微水平漂移
+      const speedY = (Math.random() * 50 + 20);
+      const speedX = (Math.random() - 0.5) * 24;
       const y = yOverride !== undefined ? yOverride : height + Math.random() * 30;
-      // 根据当前位置和速度计算刚好飞到顶部（y=-80）所需的帧数
-      const life = Math.min((y + 80) / speedY, 3000); // 上限3000帧（约50秒）防内存泄漏
       return {
         x: Math.random() * width,
         y: y,
-        r: Math.random() * 2.5 + 0.8,       // 半径 0.8-3.3px，小水泡感
+        r: Math.random() * 2.5 + 0.8,
         speedY: speedY,
         speedX: speedX,
         alpha: Math.random() * 0.4 + 0.15,
         hue: Math.random() * 360,
         wobble: Math.random() * Math.PI * 2,
-        wobbleSpeed: Math.random() * 0.015 + 0.005,
-        life: life
+        wobbleSpeed: (Math.random() * 1.0 + 0.3),
       };
     }
 
     function initDots() {
       particles = [];
       for (let i = 0; i < MAX_PARTICLES; i++) {
-        const p = createParticle(Math.random() * height); // 初始全屏均匀分布
-        particles.push(p);
+        particles.push(createParticle(Math.random() * height));
       }
     }
 
-    let frameId;
-    function animate() {
-      // 页面不可见时暂停绘制，节省 GPU/CPU（保留 rAF 循环但不执行 clearRect 与绘制）
-      if (document.hidden) {
-        frameId = requestAnimationFrame(animate);
-        return;
-      }
+    function animate(timestamp) {
+      if (!lastTime) lastTime = timestamp;
+      const dt = Math.min((timestamp - lastTime) / 1000, 0.1);
+      lastTime = timestamp;
+
       ctx.clearRect(0, 0, width, height);
 
       for (let i = 0; i < particles.length; i++) {
         const p = particles[i];
-        p.y -= p.speedY;
-        p.wobble += p.wobbleSpeed;
-        p.x += Math.sin(p.wobble) * 0.4 + p.speedX;
+        p.y -= p.speedY * dt;
+        p.wobble += p.wobbleSpeed * dt;
+        p.x += Math.sin(p.wobble) * 0.4 + p.speedX * dt;
 
-        // 超出顶部或左右边界则重置到底部
-        if (p.life <= 0 || p.y < -80 || p.x < -10 || p.x > width + 10) {
+        if (p.y < -80 || p.x < -10 || p.x > width + 10) {
           particles[i] = createParticle();
         }
 
-        // 主球体：五颜六色半透明
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
         ctx.fillStyle = "hsla(" + p.hue + ", 80%, 60%, " + p.alpha + ")";
         ctx.fill();
 
-        // 水泡高光白点
         ctx.beginPath();
         ctx.arc(p.x - p.r * 0.35, p.y - p.r * 0.35, p.r * 0.25, 0, Math.PI * 2);
         ctx.fillStyle = "rgba(255,255,255,0.5)";
@@ -1401,70 +1451,93 @@
       frameId = requestAnimationFrame(animate);
     }
 
+    function start() {
+      if (frameId) return;
+      lastTime = 0;
+      frameId = requestAnimationFrame(animate);
+    }
+
+    function stop() {
+      if (frameId) {
+        cancelAnimationFrame(frameId);
+        frameId = null;
+      }
+    }
+
     resize();
     initDots();
-    animate();
+    start();
 
-    window.addEventListener("resize", function () {
-      resize();
-      initDots();
+    window.addEventListener("resize", resize);
+
+    document.addEventListener("visibilitychange", function () {
+      if (document.hidden) {
+        stop();
+      } else {
+        start();
+      }
     });
   }
 
   // ======================== 初始化入口 ========================
   function init() {
-    cacheDOM();
-    loadState();
-    initWorker();
-    subscribe(onStateChange);
-    initResultDelegation();
-    DrawerSystem.bindGlobalDelegation();
+    try {
+      cacheDOM();
+      loadState();
+      initWorker();
+      subscribe(onStateChange);
+      initResultDelegation();
+      DrawerSystem.bindGlobalDelegation();
 
-    if (DOM.exampleBtn) {
-      DOM.exampleBtn.addEventListener("click", function () {
-        if (DOM.numbers) DOM.numbers.value = "龙蛇马 12 25 36 8 17 29 41 5 19 33 47";
-        runAnalysis();
+      if (DOM.exampleBtn) {
+        DOM.exampleBtn.addEventListener("click", function () {
+          if (DOM.numbers) DOM.numbers.value = "龙蛇马 12 25 36 8 17 29 41 5 19 33 47";
+          runAnalysis();
+        });
+      }
+      if (DOM.clearBtn) {
+        DOM.clearBtn.addEventListener("click", function () {
+          if (DOM.numbers) DOM.numbers.value = "";
+          runAnalysis();
+          showToast("已清空输入");
+        });
+      }
+      if (DOM.copyResultBtn) DOM.copyResultBtn.addEventListener("click", copyResult);
+      if (DOM.numbers) DOM.numbers.addEventListener("input", function () { runAnalysis(); });
+      if (DOM.refreshLotteryBtn) DOM.refreshLotteryBtn.addEventListener("click", function () { fetchLottery(); });
+
+      document.querySelectorAll(".nav-item").forEach(function (btn) {
+        btn.addEventListener("click", function (e) {
+          e.stopPropagation();
+          const drawer = btn.dataset.drawer;
+          if (drawer === "selectnone") {
+            clearAllFilters();
+            const killInput = document.getElementById("kill-input");
+            if (killInput) killInput.value = "";
+            DrawerSystem.close();
+            showToast("已清空所有筛选");
+          } else {
+            DrawerSystem.open(drawer);
+          }
+        });
       });
+      if (DOM.drawer_close) DOM.drawer_close.addEventListener("click", function () { DrawerSystem.close(); });
+      if (DOM.drawer_overlay) DOM.drawer_overlay.addEventListener("click", function () { DrawerSystem.close(); });
+
+      fetchLottery();
+      runAnalysis();
+      initAutoRefresh();
+      initParticles();
+
+      window.addEventListener("beforeunload", function () {
+        terminateWorker();
+      });
+
+      console.log("%c✅ 神码再现 v3.5.6 优化版已加载", "color:#00ffea;font-weight:bold");
+    } catch (e) {
+      console.error("初始化失败:", e);
+      alert("页面初始化出错，请刷新重试。错误: " + e.message);
     }
-    if (DOM.clearBtn) {
-      DOM.clearBtn.addEventListener("click", function () {
-        if (DOM.numbers) DOM.numbers.value = "";
-        runAnalysis();
-        showToast("已清空输入");
-      });
-    }
-    if (DOM.copyResultBtn) DOM.copyResultBtn.addEventListener("click", copyResult);
-    if (DOM.numbers) DOM.numbers.addEventListener("input", function () { runAnalysis(); });
-    if (DOM.refreshLotteryBtn) DOM.refreshLotteryBtn.addEventListener("click", function () { fetchLottery(); });
-
-    document.querySelectorAll(".nav-item").forEach(function (btn) {
-      btn.addEventListener("click", function (e) {
-        e.stopPropagation();
-        const drawer = btn.dataset.drawer;
-        if (drawer === "selectnone") {
-          clearAllFilters();
-          const killInput = document.getElementById("kill-input");
-          if (killInput) killInput.value = "";
-          DrawerSystem.close();
-          showToast("已清空所有筛选");
-        } else {
-          DrawerSystem.open(drawer);
-        }
-      });
-    });
-    if (DOM.drawer_close) DOM.drawer_close.addEventListener("click", function () { DrawerSystem.close(); });
-    if (DOM.drawer_overlay) DOM.drawer_overlay.addEventListener("click", function () { DrawerSystem.close(); });
-
-    fetchLottery();
-    runAnalysis();
-    initAutoRefresh();
-    initParticles(); // v3.5.4：启动彩色水泡粒子背景
-
-    window.addEventListener("beforeunload", function () {
-      terminateWorker();
-    });
-
-    console.log("%c✅ 神码再现 v3.5.4 粒子特效版已加载", "color:#00ffea;font-weight:bold");
   }
 
   document.addEventListener("DOMContentLoaded", init);
