@@ -668,7 +668,7 @@
       const wxCls = wxClassMap[wx] || "";
       const div = document.createElement("div");
       div.className = "result-ball-item";
-      div.innerHTML = '<div class="result-ball ' + colorClass + '" style="animation-delay: ' + (i * 150) + 'ms">' + escapeHtml(codes[i].padStart(2, "0")) + '<div class="result-ball-meta">' + escapeHtml(zodiacs[i] || "") + '/<span class="' + wxCls + '">' + wx + "</span></div></div>";
+      div.innerHTML = '<div class="result-ball ' + colorClass + '" style="animation-delay: ' + (i * 150) + 'ms">' + escapeHtml(codes[i].padStart(2, "0")) + '<div class="result-ball-meta">' + escapeHtml(zodiacs[i] || "") + '/<<span class="' + wxCls + '">' + wx + "</span></div></div>";
       container.appendChild(div);
     }
     if (codes.length >= 7) {
@@ -683,7 +683,7 @@
       const wxCls = wxClassMap[wx] || "";
       const div = document.createElement("div");
       div.className = "result-ball-item";
-      div.innerHTML = '<div class="result-ball ' + colorClass + '" style="animation-delay: ' + (6 * 150) + 'ms">' + escapeHtml(codes[6].padStart(2, "0")) + '<div class="result-ball-meta">' + escapeHtml(zodiacs[6] || "") + '/<span class="' + wxCls + '">' + wx + "</span></div></div>";
+      div.innerHTML = '<div class="result-ball ' + colorClass + '" style="animation-delay: ' + (6 * 150) + 'ms">' + escapeHtml(codes[6].padStart(2, "0")) + '<div class="result-ball-meta">' + escapeHtml(zodiacs[6] || "") + '/<<span class="' + wxCls + '">' + wx + "</span></div></div>";
       container.appendChild(div);
     }
     void container.offsetHeight;
@@ -1481,58 +1481,63 @@
 
   // ======================== 初始化入口 ========================
   function init() {
-    cacheDOM();
-    loadState();
-    initWorker();
-    subscribe(onStateChange);
-    initResultDelegation();
-    DrawerSystem.bindGlobalDelegation();
+    try {
+      cacheDOM();
+      loadState();
+      initWorker();
+      subscribe(onStateChange);
+      initResultDelegation();
+      DrawerSystem.bindGlobalDelegation();
 
-    if (DOM.exampleBtn) {
-      DOM.exampleBtn.addEventListener("click", function () {
-        if (DOM.numbers) DOM.numbers.value = "龙蛇马 12 25 36 8 17 29 41 5 19 33 47";
-        runAnalysis();
+      if (DOM.exampleBtn) {
+        DOM.exampleBtn.addEventListener("click", function () {
+          if (DOM.numbers) DOM.numbers.value = "龙蛇马 12 25 36 8 17 29 41 5 19 33 47";
+          runAnalysis();
+        });
+      }
+      if (DOM.clearBtn) {
+        DOM.clearBtn.addEventListener("click", function () {
+          if (DOM.numbers) DOM.numbers.value = "";
+          runAnalysis();
+          showToast("已清空输入");
+        });
+      }
+      if (DOM.copyResultBtn) DOM.copyResultBtn.addEventListener("click", copyResult);
+      if (DOM.numbers) DOM.numbers.addEventListener("input", function () { runAnalysis(); });
+      if (DOM.refreshLotteryBtn) DOM.refreshLotteryBtn.addEventListener("click", function () { fetchLottery(); });
+
+      document.querySelectorAll(".nav-item").forEach(function (btn) {
+        btn.addEventListener("click", function (e) {
+          e.stopPropagation();
+          const drawer = btn.dataset.drawer;
+          if (drawer === "selectnone") {
+            clearAllFilters();
+            const killInput = document.getElementById("kill-input");
+            if (killInput) killInput.value = "";
+            DrawerSystem.close();
+            showToast("已清空所有筛选");
+          } else {
+            DrawerSystem.open(drawer);
+          }
+        });
       });
+      if (DOM.drawer_close) DOM.drawer_close.addEventListener("click", function () { DrawerSystem.close(); });
+      if (DOM.drawer_overlay) DOM.drawer_overlay.addEventListener("click", function () { DrawerSystem.close(); });
+
+      fetchLottery();
+      runAnalysis();
+      initAutoRefresh();
+      initParticles();
+
+      window.addEventListener("beforeunload", function () {
+        terminateWorker();
+      });
+
+      console.log("%c✅ 神码再现 v3.5.6 优化版已加载", "color:#00ffea;font-weight:bold");
+    } catch (e) {
+      console.error("初始化失败:", e);
+      alert("页面初始化出错，请刷新重试。错误: " + e.message);
     }
-    if (DOM.clearBtn) {
-      DOM.clearBtn.addEventListener("click", function () {
-        if (DOM.numbers) DOM.numbers.value = "";
-        runAnalysis();
-        showToast("已清空输入");
-      });
-    }
-    if (DOM.copyResultBtn) DOM.copyResultBtn.addEventListener("click", copyResult);
-    if (DOM.numbers) DOM.numbers.addEventListener("input", function () { runAnalysis(); });
-    if (DOM.refreshLotteryBtn) DOM.refreshLotteryBtn.addEventListener("click", function () { fetchLottery(); });
-
-    document.querySelectorAll(".nav-item").forEach(function (btn) {
-      btn.addEventListener("click", function (e) {
-        e.stopPropagation();
-        const drawer = btn.dataset.drawer;
-        if (drawer === "selectnone") {
-          clearAllFilters();
-          const killInput = document.getElementById("kill-input");
-          if (killInput) killInput.value = "";
-          DrawerSystem.close();
-          showToast("已清空所有筛选");
-        } else {
-          DrawerSystem.open(drawer);
-        }
-      });
-    });
-    if (DOM.drawer_close) DOM.drawer_close.addEventListener("click", function () { DrawerSystem.close(); });
-    if (DOM.drawer_overlay) DOM.drawer_overlay.addEventListener("click", function () { DrawerSystem.close(); });
-
-    fetchLottery();
-    runAnalysis();
-    initAutoRefresh();
-    initParticles();
-
-    window.addEventListener("beforeunload", function () {
-      terminateWorker();
-    });
-
-    console.log("%c✅ 神码再现 v3.5.6 优化版已加载", "color:#00ffea;font-weight:bold");
   }
 
   document.addEventListener("DOMContentLoaded", init);
