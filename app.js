@@ -944,6 +944,11 @@
           if (sel) sel.dispatchEvent(new Event("change"));
         }, 50);
       }
+      if (type === "live") {
+        setTimeout(function () {
+          connectLiveSource(0);
+        }, 100);
+      }
     },
     close: function () {
       destroyLivePlayer();
@@ -1122,7 +1127,12 @@
   let liveSourceIndex = 0;
   let liveSourceTimer = null;
   let liveSwitchLock = false;
-  const LIVE_SOURCE_TIMEOUT = 15000;
+    function getSourceTimeout(idx) {
+    if (idx === 0) return 10000; // 源1 API获取：10秒
+    if (idx === 1) return 3000;  // 源2 HLS：3秒
+    return 3000;                // 源3 FLV：3秒
+  }
+
 
   const LIVE_SOURCES = [
     { name: "API获取", type: "auto", url: "" },
@@ -1134,29 +1144,53 @@
     if (liveSourceTimer) { clearTimeout(liveSourceTimer); liveSourceTimer = null; }
   }
 
-  function connectLiveSource(idx) {
+   function connectLiveSource(idx) {
     if (liveSwitchLock) return;
+
+    // ===== 直播时段窗口：仅 21:33-21:35 (北京时间 / 设备本地时间) =====
+    const now = new Date();
+    const h = now.getHours(), m = now.getMinutes(), s = now.getSeconds();
+    const totalSec = h * 3600 + m * 60 + s;
+    const startSec = 21 * 3600 + 33 * 60; // 21:33:00
+    const endSec   = 21 * 3600 + 35 * 60; // 21:35:00
+
+    if (totalSec < startSec || totalSec > endSec) {
+      const loading = document.getElementById("live-loading");
+      const error   = document.getElementById("live-error");
+      if (loading) loading.classList.add("dhidden");
+      if (error) {
+        error.classList.remove("dhidden");
+        error.innerHTML = '<div style="text-align:center; padding:24px;">' +
+          '<svg width="48" height="48" style="color:#fbbf24; margin:0 auto 12px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>' +
+          '<p style="color:#fbbf24; font-weight:bold; margin-bottom:8px;">⏰ 非直播时段</p>' +
+          '<p style="color:#9ca3af; font-size:12px;">开奖直播仅在 21:33-21:35 (北京时间/设备时间) 开放</p>' +
+          '</div>';
+      }
+      return;
+    }
+
     liveSwitchLock = true;
     clearLiveTimer();
 
-    const video = document.getElementById("live-video");
+    const video   = document.getElementById("live-video");
     const loading = document.getElementById("live-loading");
-    const error = document.getElementById("live-error");
-    const status = document.getElementById("live-status");
+    const error   = document.getElementById("live-error");
+    const status  = document.getElementById("live-status");
     if (!video) { liveSwitchLock = false; return; }
 
     destroyLivePlayer();
     if (loading) loading.classList.remove("dhidden");
-    if (error) error.classList.add("dhidden");
-    if (status) status.textContent = "正在连接 " + LIVE_SOURCES[idx].name + "...";
+    if (error)   error.classList.add("dhidden");
+    if (status)  status.textContent = "正在连接 " + LIVE_SOURCES[idx].name + "...";
 
     const src = LIVE_SOURCES[idx];
 
+    // 按源设置独立超时
     liveSourceTimer = setTimeout(function () {
       console.warn("直播源加载超时: " + src.name);
       liveSwitchLock = false;
       tryNextSource();
-    }, LIVE_SOURCE_TIMEOUT);
+    }, getSourceTimeout(idx));
 
     if (src.type === "auto") {
       fetch("https://macaumarksix.com/api/live2?_t=" + Date.now())
@@ -1173,6 +1207,25 @@
               showLiveError();
             }
           }
+        })
+        .catch(function () {
+          clearLiveTimer();
+          if (idx + 1 < LIVE_SOURCES.length) {
+            setTimeout(function () { liveSwitchLock = false; connectLiveSource(idx + 1); }, 1000);
+          } else {
+            liveSwitchLock = false;
+            showLiveError();
+          }
+        });
+    } else if (src.url) {
+      playStream(src.url, src.type);
+    } else {
+      clearLiveTimer();
+      liveSwitchLock = false;
+      showLiveError();
+    }
+  }
+
         })
         .catch(function () {
           clearLiveTimer();
