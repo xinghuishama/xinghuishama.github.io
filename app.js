@@ -7,10 +7,6 @@
 // 5) v3.5.6: 粒子帧率独立/后台彻底暂停、飞入防堆积、直播倒计时、状态7天过期、Worker兜底
 (function () {
   "use strict";
-  try {
-    // ... 你原来的全部代码 ...
-
-
 
   // ======================== 数据与配置 ========================
   const DATA = window.APP_DATA || {};
@@ -1175,17 +1171,17 @@
   function connectLiveSource(idx) {
     if (liveSwitchLock) return;
 
-    const status = getLiveWindowStatus();
-    if (!status.ok) {
+    const liveStatus = getLiveWindowStatus();
+    if (!liveStatus.ok) {
       const loading = document.getElementById("live-loading");
       const error   = document.getElementById("live-error");
       if (loading) loading.classList.add("dhidden");
       if (error) {
         error.classList.remove("dhidden");
         let msg;
-        if (status.wait !== null) {
-          const m = Math.floor(status.wait / 60);
-          const s = status.wait % 60;
+        if (liveStatus.wait !== null) {
+          const m = Math.floor(liveStatus.wait / 60);
+          const s = liveStatus.wait % 60;
           msg = "距离开播还有 " + m + "分" + (s < 10 ? "0" : "") + s + "秒";
         } else {
           msg = "本期直播已结束，请等待下期";
@@ -1205,13 +1201,13 @@
     const video   = document.getElementById("live-video");
     const loading = document.getElementById("live-loading");
     const error   = document.getElementById("live-error");
-    const status  = document.getElementById("live-status");
+    const statusEl  = document.getElementById("live-status");
     if (!video) { liveSwitchLock = false; return; }
 
     destroyLivePlayer();
     if (loading) loading.classList.remove("dhidden");
     if (error)   error.classList.add("dhidden");
-    if (status)  status.textContent = "正在连接 " + LIVE_SOURCES[idx].name + "...";
+    if (statusEl)  statusEl.textContent = "正在连接 " + LIVE_SOURCES[idx].name + "...";
 
     const src = LIVE_SOURCES[idx];
 
@@ -1545,9 +1541,4 @@
   }
 
   document.addEventListener("DOMContentLoaded", init);
-
-} catch (e) {
-    alert("初始化错误: " + e.message + "\n位置: " + (e.stack || "未知"));
-    console.error(e);
-  }
 })();
