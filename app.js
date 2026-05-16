@@ -1,8 +1,9 @@
-// ======================== app.js — 主线程核心逻辑 v3.5.4 ========================
+// ======================== app.js — 主线程核心逻辑 v3.5.5 ========================
 // 变更记录：
 // 1) 开奖自动刷新：21:33:30 起每5秒刷新，开奖完成停止
 // 2) 新增彩色水泡粒子背景特效（initParticles）
 // 3) 保留 v3.5.3 全部审查修复（去重修复、缓存复用、z-index、内存泄漏、并发锁等）
+// 4) v3.5.5: 直播时段拦截 + 源独立超时 + 抽屉自动触发
 (function () {
   "use strict";
 
@@ -654,7 +655,7 @@
       const wxCls = wxClassMap[wx] || "";
       const div = document.createElement("div");
       div.className = "result-ball-item";
-      div.innerHTML = '<div class="result-ball ' + colorClass + '" style="animation-delay: ' + (i * 150) + 'ms">' + escapeHtml(codes[i].padStart(2, "0")) + '<div class="result-ball-meta">' + escapeHtml(zodiacs[i] || "") + '/<span class="' + wxCls + '">' + wx + "</span></div></div>";
+      div.innerHTML = '<div class="result-ball ' + colorClass + '" style="animation-delay: ' + (i * 150) + 'ms">' + escapeHtml(codes[i].padStart(2, "0")) + '<div class="result-ball-meta">' + escapeHtml(zodiacs[i] || "") + '/<<span class="' + wxCls + '">' + wx + "</span></div></div>";
       container.appendChild(div);
     }
     if (codes.length >= 7) {
@@ -669,7 +670,7 @@
       const wxCls = wxClassMap[wx] || "";
       const div = document.createElement("div");
       div.className = "result-ball-item";
-      div.innerHTML = '<div class="result-ball ' + colorClass + '" style="animation-delay: ' + (6 * 150) + 'ms">' + escapeHtml(codes[6].padStart(2, "0")) + '<div class="result-ball-meta">' + escapeHtml(zodiacs[6] || "") + '/<span class="' + wxCls + '">' + wx + "</span></div></div>";
+      div.innerHTML = '<div class="result-ball ' + colorClass + '" style="animation-delay: ' + (6 * 150) + 'ms">' + escapeHtml(codes[6].padStart(2, "0")) + '<div class="result-ball-meta">' + escapeHtml(zodiacs[6] || "") + '/<<span class="' + wxCls + '">' + wx + "</span></div></div>";
       container.appendChild(div);
     }
     void container.offsetHeight;
@@ -1127,12 +1128,6 @@
   let liveSourceIndex = 0;
   let liveSourceTimer = null;
   let liveSwitchLock = false;
-    function getSourceTimeout(idx) {
-    if (idx === 0) return 10000; // 源1 API获取：10秒
-    if (idx === 1) return 3000;  // 源2 HLS：3秒
-    return 3000;                // 源3 FLV：3秒
-  }
-
 
   const LIVE_SOURCES = [
     { name: "API获取", type: "auto", url: "" },
@@ -1140,14 +1135,20 @@
     { name: "FLV源1", type: "flv", url: "https://media.macaumarksix.com/live/marksix.flv" }
   ];
 
+  function getSourceTimeout(idx) {
+    if (idx === 0) return 10000; // 源1 API获取：10秒
+    if (idx === 1) return 5000;  // 源2 HLS：5秒
+    return 3000;                // 源3 FLV：3秒
+  }
+
   function clearLiveTimer() {
     if (liveSourceTimer) { clearTimeout(liveSourceTimer); liveSourceTimer = null; }
   }
 
-   function connectLiveSource(idx) {
+  function connectLiveSource(idx) {
     if (liveSwitchLock) return;
 
-    // ===== 直播时段窗口：仅 21:33-21:35 (北京时间 / 设备本地时间) =====
+    // ===== 直播时段窗口：仅 21:33-21:35 (设备本地时间) =====
     const now = new Date();
     const h = now.getHours(), m = now.getMinutes(), s = now.getSeconds();
     const totalSec = h * 3600 + m * 60 + s;
@@ -1163,7 +1164,7 @@
         error.innerHTML = '<div style="text-align:center; padding:24px;">' +
           '<svg width="48" height="48" style="color:#fbbf24; margin:0 auto 12px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>' +
           '<p style="color:#fbbf24; font-weight:bold; margin-bottom:8px;">⏰ 非直播时段</p>' +
-          '<p style="color:#9ca3af; font-size:12px;">开奖直播仅在 21:33-21:35 (北京时间/设备时间) 开放</p>' +
+          '<p style="color:#9ca3af; font-size:12px;">开奖直播仅在 21:33-21:35 (设备本地时间) 开放</p>' +
           '</div>';
       }
       return;
@@ -1185,7 +1186,6 @@
 
     const src = LIVE_SOURCES[idx];
 
-    // 按源设置独立超时
     liveSourceTimer = setTimeout(function () {
       console.warn("直播源加载超时: " + src.name);
       liveSwitchLock = false;
@@ -1207,25 +1207,6 @@
               showLiveError();
             }
           }
-        })
-        .catch(function () {
-          clearLiveTimer();
-          if (idx + 1 < LIVE_SOURCES.length) {
-            setTimeout(function () { liveSwitchLock = false; connectLiveSource(idx + 1); }, 1000);
-          } else {
-            liveSwitchLock = false;
-            showLiveError();
-          }
-        });
-    } else if (src.url) {
-      playStream(src.url, src.type);
-    } else {
-      clearLiveTimer();
-      liveSwitchLock = false;
-      showLiveError();
-    }
-  }
-
         })
         .catch(function () {
           clearLiveTimer();
@@ -1343,6 +1324,7 @@
 
   function destroyLivePlayer() {
     clearLiveTimer();
+    liveSwitchLock = false; // 关闭抽屉时强制解锁，防止下次打不开
     if (currentHls) { currentHls.destroy(); currentHls = null; }
     if (currentFlvPlayer) { currentFlvPlayer.destroy(); currentFlvPlayer = null; }
     const video = document.getElementById("live-video");
@@ -1517,7 +1499,7 @@
       terminateWorker();
     });
 
-    console.log("%c✅ 神码再现 v3.5.4 粒子特效版已加载", "color:#00ffea;font-weight:bold");
+    console.log("%c✅ 神码再现 v3.5.5 直播时段版已加载", "color:#00ffea;font-weight:bold");
   }
 
   document.addEventListener("DOMContentLoaded", init);
