@@ -7,6 +7,10 @@
 // 5) v3.5.6: 粒子帧率独立/后台彻底暂停、飞入防堆积、直播倒计时、状态7天过期、Worker兜底
 (function () {
   "use strict";
+  try {
+    // ... 你原来的全部代码 ...
+
+
 
   // ======================== 数据与配置 ========================
   const DATA = window.APP_DATA || {};
@@ -1541,4 +1545,9 @@
   }
 
   document.addEventListener("DOMContentLoaded", init);
+
+} catch (e) {
+    alert("初始化错误: " + e.message + "\n位置: " + (e.stack || "未知"));
+    console.error(e);
+  }
 })();
