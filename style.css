@@ -705,16 +705,17 @@ body {
   z-index: 0;
   pointer-events: none;
 }
-/* 雷神之锤特效 */
-.lightning {
-  animation: lightning-flash 0.1s ease-out;
+/* 黑洞吞噬特效 */
+.blackhole {
+  will-change: width, height, opacity;
 }
-@keyframes lightning-flash {
-  0%, 100% { opacity: 0; }
-  50% { opacity: 1; }
+
+.distortion {
+  will-change: transform, opacity;
 }
 
 .crack {
+  will-change: width, opacity;
   border-radius: 1px;
 }
 
@@ -723,12 +724,22 @@ body {
 }
 
 .landing-shock {
-  animation: shock-wave 0.4s ease-out;
+  animation: blackhole-shock 0.5s ease-out;
 }
-@keyframes shock-wave {
-  0% { transform: scale(1); }
+
+@keyframes blackhole-shock {
+  0% { transform: scale(1); filter: brightness(1); }
   25% { transform: scale(1.3); filter: brightness(2); }
   50% { transform: scale(0.9); }
   75% { transform: scale(1.1); }
-  100% { transform: scale(1); }
+  100% { transform: scale(1); filter: brightness(1); }
 }
+
+.flash-unique {
+  animation: flash-pulse 1s ease-in-out 3;
+}
+
+@keyframes flash-pulse {
+  0%, 100% { box-shadow: 0 0 5px currentColor; }
+  50% { box-shadow: 0 0 25px currentColor, 0 0 50px currentColor; }
+

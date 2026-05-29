@@ -253,73 +253,155 @@
     } catch (err) { console.error("onWorkerMessage error:", err); }
   }
 
-  let currentUniqueElement = null, lastUniqueNum = null;
+  
 //雷神特效这里开始
- function launchUniqueFlyEffect(targetNum, colorClass) {
-  document.querySelectorAll(".flying-unique-ball, .lightning, .hammer, .crack, .spark").forEach(function (el) { el.remove(); });
-  const targetEl = DOM.result.querySelector('[data-num="' + targetNum + '"]');
-  if (!targetEl) return;
-  const targetRect = targetEl.getBoundingClientRect();
-  const endX = targetRect.left + targetRect.width / 2;
-  const endY = targetRect.top + targetRect.height / 2;
-  const color = colorClass === "ball-red" ? "#ff3366" : colorClass === "ball-green" ? "#33cc66" : "#3366ff";
-  
-  // 闪电
-  const lightning = document.createElement("div");
-  lightning.className = "lightning";
-  lightning.style.cssText = "position:fixed;left:" + endX + "px;top:0;width:3px;height:0;background:linear-gradient(to bottom,#fff," + color + ");pointer-events:none;z-index:9998;box-shadow:0 0 20px " + color + ";filter:blur(1px);";
-  document.body.appendChild(lightning);
-  
-  lightning.animate([
-    { height: '0px', opacity: 0 },
-    { height: endY + 'px', opacity: 1, offset: 0.1 },
-    { height: endY + 'px', opacity: 0.8, offset: 0.9 },
-    { height: endY + 'px', opacity: 0 }
-  ], { duration: 300, easing: 'ease-out' }).onfinish = function() { lightning.remove(); };
-  
-  // 雷神之锤（球体变形）
-  const hammer = document.createElement("div");
-  hammer.className = "flying-unique-ball " + colorClass;
-  hammer.textContent = String(targetNum).padStart(2, "0");
-  hammer.style.cssText = "position:fixed;left:" + endX + "px;top:-100px;transform:translate(-50%,-50%) scale(1.5);z-index:10000;filter:drop-shadow(0 0 30px " + color + ");";
-  document.body.appendChild(hammer);
-  
-  // 砸下
-  hammer.animate([
-    { top: '-100px', transform: 'translate(-50%,-50%) scale(1.5) rotate(0deg)' },
-    { top: (endY - 50) + 'px', transform: 'translate(-50%,-50%) scale(1.2) rotate(180deg)', offset: 0.8 },
-    { top: endY + 'px', transform: 'translate(-50%,-50%) scale(1) rotate(360deg)' }
-  ], { duration: 600, easing: 'cubic-bezier(0.6, -0.28, 0.735, 0.045)' }).onfinish = function() {
-    // 地面龟裂
-    for (let i = 0; i < 8; i++) {
-      const crack = document.createElement("div");
-      crack.className = "crack";
-      const angle = (i / 8) * Math.PI * 2;
-      crack.style.cssText = "position:fixed;left:" + endX + "px;top:" + endY + "px;width:0;height:2px;background:" + color + ";transform:rotate(" + angle + "rad);transform-origin:left center;pointer-events:none;z-index:9997;box-shadow:0 0 10px " + color + ";";
-      document.body.appendChild(crack);
-      crack.animate([{ width: '0px', opacity: 1 }, { width: '60px', opacity: 0 }], { duration: 400, delay: i * 50 }).onfinish = function() { crack.remove(); };
+   let currentUniqueElement = null, lastUniqueNum = null;
+  function launchUniqueFlyEffect(targetNum, colorClass) {
+    document.querySelectorAll(".flying-unique-ball, .blackhole, .distortion, .accretion-disk, .particle-stream").forEach(function (el) { el.remove(); });
+    var targetEl = DOM.result.querySelector('[data-num="' + targetNum + '"]');
+    if (!targetEl) return;
+    var targetRect = targetEl.getBoundingClientRect();
+    var endX = targetRect.left + targetRect.width / 2;
+    var endY = targetRect.top + targetRect.height / 2;
+    var centerX = window.innerWidth / 2;
+    var centerY = window.innerHeight / 2;
+    var color = colorClass === "ball-red" ? "#ff3366" : colorClass === "ball-green" ? "#33cc66" : "#3366ff";
+    var darkColor = colorClass === "ball-red" ? "#660022" : colorClass === "ball-green" ? "#004422" : "#002266";
+    
+    // 吸积盘（旋转光环）
+    var disk = document.createElement("div");
+    disk.className = "accretion-disk";
+    disk.style.cssText = "position:fixed;left:" + centerX + "px;top:" + centerY + "px;width:0;height:0;pointer-events:none;z-index:9998;transform:translate(-50%,-50%);";
+    document.body.appendChild(disk);
+    
+    var i;
+    for (i = 0; i < 4; i++) {
+      (function(idx) {
+        var ring = document.createElement("div");
+        ring.style.cssText = "position:absolute;left:50%;top:50%;width:0;height:0;border:2px solid " + color + ";border-radius:50%;transform:translate(-50%,-50%);opacity:0.6;border-top-color:transparent;border-bottom-color:transparent;";
+        disk.appendChild(ring);
+        var anim = ring.animate([
+          { width: '0px', height: '0px', transform: 'translate(-50%,-50%) rotate(0deg)', opacity: 0 },
+          { width: (100 + idx * 40) + 'px', height: (100 + idx * 40) + 'px', transform: 'translate(-50%,-50%) rotate(' + (idx % 2 === 0 ? 180 : -180) + 'deg)', opacity: 0.6, offset: 0.5 },
+          { width: (80 + idx * 30) + 'px', height: (80 + idx * 30) + 'px', transform: 'translate(-50%,-50%) rotate(' + (idx % 2 === 0 ? 360 : -360) + 'deg)', opacity: 0.3 }
+        ], { duration: 1500, delay: idx * 100, easing: 'ease-in-out' });
+        anim.onfinish = function() { ring.remove(); };
+      })(i);
     }
     
-    // 电流四散
-    for (let i = 0; i < 12; i++) {
-      const spark = document.createElement("div");
-      spark.className = "spark";
-      spark.style.cssText = "position:fixed;left:" + endX + "px;top:" + endY + "px;width:4px;height:4px;background:#fff;border-radius:50%;pointer-events:none;z-index:9999;box-shadow:0 0 15px " + color + ";";
-      document.body.appendChild(spark);
-      const angle = Math.random() * Math.PI * 2;
-      const dist = 30 + Math.random() * 80;
-      spark.animate([
-        { transform: 'translate(0,0) scale(1)', opacity: 1 },
-        { transform: 'translate(' + Math.cos(angle)*dist + 'px,' + Math.sin(angle)*dist + 'px) scale(0)', opacity: 0 }
-      ], { duration: 300 + Math.random()*200 }).onfinish = function() { spark.remove(); };
+    // 黑洞本体
+    var blackhole = document.createElement("div");
+    blackhole.className = "blackhole";
+    blackhole.style.cssText = "position:fixed;left:" + centerX + "px;top:" + centerY + "px;width:0;height:0;background:radial-gradient(circle,#000 20%," + darkColor + " 50%," + color + " 70%,transparent 100%);border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:9999;box-shadow:0 0 60px " + color + ", inset 0 0 40px " + color + ";";
+    document.body.appendChild(blackhole);
+    
+    var bhAnim = blackhole.animate([
+      { width: '0px', height: '0px', opacity: 0 },
+      { width: '80px', height: '80px', opacity: 1, offset: 0.3 },
+      { width: '60px', height: '60px', opacity: 0.9, offset: 0.7 },
+      { width: '0px', height: '0px', opacity: 0 }
+    ], { duration: 2000, easing: 'ease-in-out' });
+    bhAnim.onfinish = function() { blackhole.remove(); disk.remove(); };
+    
+    // 球体：从目标位置被吸入黑洞
+    var ball = document.createElement("div");
+    ball.className = "flying-unique-ball " + colorClass;
+    ball.textContent = String(targetNum).padStart(2, "0");
+    ball.style.cssText = "position:fixed;left:" + endX + "px;top:" + endY + "px;transform:translate(-50%,-50%) scale(1);z-index:10000;";
+    document.body.appendChild(ball);
+    
+    // 吸入阶段
+    var startTime = performance.now();
+    var phase1Duration = 800;
+    
+    function phase1(now) {
+      var progress = Math.min((now - startTime) / phase1Duration, 1);
+      var ease = 1 - Math.pow(1 - progress, 3);
+      
+      var currentX = endX + (centerX - endX) * ease;
+      var currentY = endY + (centerY - endY) * ease;
+      var scale = 1 - ease * 0.9;
+      var rotate = ease * 720;
+      
+      ball.style.left = currentX + "px";
+      ball.style.top = currentY + "px";
+      ball.style.transform = "translate(-50%,-50%) scale(" + scale + ") rotate(" + rotate + "deg)";
+      
+      // 尾迹粒子
+      if (progress < 1 && Math.random() > 0.7) {
+        var trail = document.createElement("div");
+        trail.className = "particle-stream";
+        trail.style.cssText = "position:fixed;left:" + currentX + "px;top:" + currentY + "px;width:4px;height:4px;background:" + color + ";border-radius:50%;pointer-events:none;z-index:9997;opacity:0.6;";
+        document.body.appendChild(trail);
+        trail.animate([
+          { transform: 'translate(-50%,-50%) scale(1)', opacity: 0.6 },
+          { transform: 'translate(-50%,-50%) scale(0)', opacity: 0 }
+        ], { duration: 300 }).onfinish = function() { trail.remove(); };
+      }
+      
+      if (progress < 1) {
+        requestAnimationFrame(phase1);
+      } else {
+        // 进入黑洞，短暂隐藏
+        ball.style.transform = "translate(-50%,-50%) scale(0)";
+        ball.style.opacity = 0;
+        
+        // 延迟后喷出
+        setTimeout(function() {
+          phase2Start = performance.now();
+          requestAnimationFrame(phase2);
+        }, 200);
+      }
     }
     
-    hammer.remove();
-    targetEl.classList.add("landing-shock", "flash-unique");
-    setTimeout(function() { targetEl.classList.remove("landing-shock"); }, 400);
-    showToast("⚡ 雷神之锤：" + String(targetNum).padStart(2, "0") + " 号");
-  };
-}
+    // 喷出阶段
+    var phase2Start;
+    var phase2Duration = 1000;
+    
+    function phase2(now) {
+      var progress = Math.min((now - phase2Start) / phase2Duration, 1);
+      var ease = progress < 0.5 ? 4 * progress * progress * progress : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+      
+      // 从黑洞喷出到目标位置
+      var currentX = centerX + (endX - centerX) * ease;
+      var currentY = centerY + (endY - centerY) * ease;
+      var scale = 0.1 + ease * 0.9;
+      var rotate = -720 * (1 - ease);
+      
+      ball.style.left = currentX + "px";
+      ball.style.top = currentY + "px";
+      ball.style.transform = "translate(-50%,-50%) scale(" + scale + ") rotate(" + rotate + "deg)";
+      ball.style.opacity = Math.min(1, ease * 2);
+      
+      // 喷出粒子
+      if (progress < 0.5 && Math.random() > 0.6) {
+        var jet = document.createElement("div");
+        jet.style.cssText = "position:fixed;left:" + currentX + "px;top:" + currentY + "px;width:3px;height:3px;background:" + color + ";border-radius:50%;pointer-events:none;z-index:9997;box-shadow:0 0 6px " + color + ";";
+        document.body.appendChild(jet);
+        var jetAngle = Math.random() * Math.PI * 2;
+        var jetDist = 30 + Math.random() * 50;
+        jet.animate([
+          { transform: 'translate(-50%,-50%) scale(1)', opacity: 1 },
+          { transform: 'translate(' + (Math.cos(jetAngle)*jetDist) + 'px,' + (Math.sin(jetAngle)*jetDist) + 'px) scale(0)', opacity: 0 }
+        ], { duration: 400 }).onfinish = function() { jet.remove(); };
+      }
+      
+      if (progress < 1) {
+        requestAnimationFrame(phase2);
+      } else {
+        // 着陆
+        ball.remove();
+        targetEl.classList.add("landing-shock", "flash-unique");
+        setTimeout(function() { targetEl.classList.remove("landing-shock"); }, 400);
+        showToast("🌌 黑洞吞噬：" + String(targetNum).padStart(2, "0") + " 号");
+      }
+    }
+    
+    requestAnimationFrame(phase1);
+  }
+
+ 
+
 //雷神特效结束
   function renderResult(adjustedCount, adjustedTotal, unique, hitCounts, rawCount) {
     try {
