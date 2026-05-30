@@ -254,8 +254,8 @@
   }
 
   
-//雷神特效这里开始
-   let currentUniqueElement = null, lastUniqueNum = null;
+//黑洞特效开始
+  let currentUniqueElement = null, lastUniqueNum = null;
   function launchUniqueFlyEffect(targetNum, colorClass) {
     document.querySelectorAll(".flying-unique-ball, .blackhole, .distortion, .accretion-disk, .particle-stream").forEach(function (el) { el.remove(); });
     var targetEl = DOM.result.querySelector('[data-num="' + targetNum + '"]');
@@ -263,8 +263,9 @@
     var targetRect = targetEl.getBoundingClientRect();
     var endX = targetRect.left + targetRect.width / 2;
     var endY = targetRect.top + targetRect.height / 2;
+    // 黑洞位置：屏幕中上部，避开底部导航抽屉
     var centerX = window.innerWidth / 2;
-    var centerY = window.innerHeight / 2;
+    var centerY = window.innerHeight * 0.35;
     var color = colorClass === "ball-red" ? "#ff3366" : colorClass === "ball-green" ? "#33cc66" : "#3366ff";
     var darkColor = colorClass === "ball-red" ? "#660022" : colorClass === "ball-green" ? "#004422" : "#002266";
     
@@ -284,7 +285,7 @@
           { width: '0px', height: '0px', transform: 'translate(-50%,-50%) rotate(0deg)', opacity: 0 },
           { width: (100 + idx * 40) + 'px', height: (100 + idx * 40) + 'px', transform: 'translate(-50%,-50%) rotate(' + (idx % 2 === 0 ? 180 : -180) + 'deg)', opacity: 0.6, offset: 0.5 },
           { width: (80 + idx * 30) + 'px', height: (80 + idx * 30) + 'px', transform: 'translate(-50%,-50%) rotate(' + (idx % 2 === 0 ? 360 : -360) + 'deg)', opacity: 0.3 }
-        ], { duration: 1500, delay: idx * 100, easing: 'ease-in-out' });
+        ], { duration: 3000, delay: idx * 200, easing: 'ease-in-out' });
         anim.onfinish = function() { ring.remove(); };
       })(i);
     }
@@ -297,10 +298,11 @@
     
     var bhAnim = blackhole.animate([
       { width: '0px', height: '0px', opacity: 0 },
-      { width: '80px', height: '80px', opacity: 1, offset: 0.3 },
-      { width: '60px', height: '60px', opacity: 0.9, offset: 0.7 },
+      { width: '80px', height: '80px', opacity: 1, offset: 0.2 },
+      { width: '100px', height: '100px', opacity: 0.9, offset: 0.5 },
+      { width: '80px', height: '80px', opacity: 0.9, offset: 0.7 },
       { width: '0px', height: '0px', opacity: 0 }
-    ], { duration: 2000, easing: 'ease-in-out' });
+    ], { duration: 4000, easing: 'ease-in-out' });
     bhAnim.onfinish = function() { blackhole.remove(); disk.remove(); };
     
     // 球体：从目标位置被吸入黑洞
@@ -310,25 +312,26 @@
     ball.style.cssText = "position:fixed;left:" + endX + "px;top:" + endY + "px;transform:translate(-50%,-50%) scale(1);z-index:10000;";
     document.body.appendChild(ball);
     
-    // 吸入阶段
+    // 吸入阶段（变慢：2秒）
     var startTime = performance.now();
-    var phase1Duration = 800;
+    var phase1Duration = 2000;
     
     function phase1(now) {
       var progress = Math.min((now - startTime) / phase1Duration, 1);
-      var ease = 1 - Math.pow(1 - progress, 3);
+      // 慢速缓动：ease-in-out-cubic
+      var ease = progress < 0.5 ? 4 * progress * progress * progress : 1 - Math.pow(-2 * progress + 2, 3) / 2;
       
       var currentX = endX + (centerX - endX) * ease;
       var currentY = endY + (centerY - endY) * ease;
       var scale = 1 - ease * 0.9;
-      var rotate = ease * 720;
+      var rotate = ease * 1080;
       
       ball.style.left = currentX + "px";
       ball.style.top = currentY + "px";
       ball.style.transform = "translate(-50%,-50%) scale(" + scale + ") rotate(" + rotate + "deg)";
       
-      // 尾迹粒子
-      if (progress < 1 && Math.random() > 0.7) {
+      // 尾迹粒子（更频繁）
+      if (progress < 1 && Math.random() > 0.5) {
         var trail = document.createElement("div");
         trail.className = "particle-stream";
         trail.style.cssText = "position:fixed;left:" + currentX + "px;top:" + currentY + "px;width:4px;height:4px;background:" + color + ";border-radius:50%;pointer-events:none;z-index:9997;opacity:0.6;";
@@ -336,7 +339,7 @@
         trail.animate([
           { transform: 'translate(-50%,-50%) scale(1)', opacity: 0.6 },
           { transform: 'translate(-50%,-50%) scale(0)', opacity: 0 }
-        ], { duration: 300 }).onfinish = function() { trail.remove(); };
+        ], { duration: 500 }).onfinish = function() { trail.remove(); };
       }
       
       if (progress < 1) {
@@ -350,13 +353,13 @@
         setTimeout(function() {
           phase2Start = performance.now();
           requestAnimationFrame(phase2);
-        }, 200);
+        }, 400);
       }
     }
     
-    // 喷出阶段
+    // 喷出阶段（1.6秒）
     var phase2Start;
-    var phase2Duration = 1000;
+    var phase2Duration = 1600;
     
     function phase2(now) {
       var progress = Math.min((now - phase2Start) / phase2Duration, 1);
@@ -366,7 +369,7 @@
       var currentX = centerX + (endX - centerX) * ease;
       var currentY = centerY + (endY - centerY) * ease;
       var scale = 0.1 + ease * 0.9;
-      var rotate = -720 * (1 - ease);
+      var rotate = -1080 * (1 - ease);
       
       ball.style.left = currentX + "px";
       ball.style.top = currentY + "px";
@@ -374,7 +377,7 @@
       ball.style.opacity = Math.min(1, ease * 2);
       
       // 喷出粒子
-      if (progress < 0.5 && Math.random() > 0.6) {
+      if (progress < 0.5 && Math.random() > 0.5) {
         var jet = document.createElement("div");
         jet.style.cssText = "position:fixed;left:" + currentX + "px;top:" + currentY + "px;width:3px;height:3px;background:" + color + ";border-radius:50%;pointer-events:none;z-index:9997;box-shadow:0 0 6px " + color + ";";
         document.body.appendChild(jet);
@@ -383,7 +386,7 @@
         jet.animate([
           { transform: 'translate(-50%,-50%) scale(1)', opacity: 1 },
           { transform: 'translate(' + (Math.cos(jetAngle)*jetDist) + 'px,' + (Math.sin(jetAngle)*jetDist) + 'px) scale(0)', opacity: 0 }
-        ], { duration: 400 }).onfinish = function() { jet.remove(); };
+        ], { duration: 600 }).onfinish = function() { jet.remove(); };
       }
       
       if (progress < 1) {
@@ -400,9 +403,7 @@
     requestAnimationFrame(phase1);
   }
 
- 
-
-//雷神特效结束
+//黑洞特效结束
   function renderResult(adjustedCount, adjustedTotal, unique, hitCounts, rawCount) {
     try {
       const container = DOM.result;
