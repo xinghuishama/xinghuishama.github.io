@@ -9,9 +9,9 @@
   const numProps = DATA.numProps || [];
   const RED_SET = new Set(DATA.CATEGORIES ? DATA.CATEGORIES.红波 : []);
   const BLUE_SET = new Set(DATA.CATEGORIES ? DATA.CATEGORIES.蓝波 : []);
-  // 五行相关方法直接使用 DATA 提供（无需自己实现）
   const getFive = DATA.getNumberWuxing || function () { return "?"; };
   const generateWuxingTable = DATA.generateWuxing || function () { return { 金:[],木:[],水:[],火:[],土:[] }; };
+  const CURRENT_YEAR = new Date().getFullYear();
 
   // ---------- 常量配置 ----------
   const API_CONFIG = {
@@ -31,7 +31,6 @@
       "drawer-overlay","drawer-container","drawer-title","drawer-content","drawer-close","toast"
     ];
     ids.forEach(id => { DOM[id.replace(/-/g, "_")] = document.getElementById(id); });
-    // 一些元素 ID 含连字符，单独处理
     if (!DOM.drawer_content) DOM.drawer_content = document.getElementById("drawer-content");
     if (!DOM.drawer_container) DOM.drawer_container = document.getElementById("drawer-container");
     if (!DOM.drawer_overlay) DOM.drawer_overlay = document.getElementById("drawer-overlay");
@@ -52,20 +51,17 @@
   function toggleFilter(category, value, checked) {
     if (!state.selectedFilters[category]) return;
     const set = new Set(state.selectedFilters[category]);
-    checked ? set.add(value) : set.delete(value);
+    if (checked) set.add(value); else set.delete(value);
     state.selectedFilters[category] = Array.from(set);
     notify();
   }
   function clearAllFilters() {
     state.killNums = [];
-    for (let k in state.selectedFilters) state.selectedFilters[k] = [];
+    Object.keys(state.selectedFilters).forEach(k => { state.selectedFilters[k] = []; });
     notify();
   }
-  function getFilterSet() {
-    return Object.values(state.selectedFilters).flat();
-  }
+  function getFilterSet() { return Object.values(state.selectedFilters).flat(); }
 
-  // 持久化状态 (7天过期)
   function saveState() {
     try {
       localStorage.setItem(LS_KEY, JSON.stringify({ killNums: state.killNums, selectedFilters: state.selectedFilters, _t: Date.now() }));
@@ -80,9 +76,10 @@
       if (parsed._t && (Date.now() - parsed._t > 7 * 86400000)) { localStorage.removeItem(LS_KEY); return; }
       if (Array.isArray(parsed.killNums)) state.killNums = parsed.killNums.filter(n => Number.isInteger(n) && n >= 1 && n <= 49);
       if (parsed.selectedFilters && typeof parsed.selectedFilters === "object") {
-        for (let k in state.selectedFilters) {
-          if (Array.isArray(parsed.selectedFilters[k])) state.selectedFilters[k] = [...parsed.selectedFilters[k]];
-        }
+        Object.keys(state.selectedFilters).forEach(k => {
+          const val = parsed.selectedFilters[k];
+          if (Array.isArray(val)) state.selectedFilters[k] = Array.from(val);
+        });
       }
     } catch (e) { console.warn("loadState failed", e); }
   }
@@ -110,9 +107,8 @@
   // ---------- 输入解析 ----------
   function parseInputCount(input) {
     if (!input || !input.trim()) return { nums: [], truncated: false };
-    let cleaned = input.replace(/《.*?》/g, " ").replace(/[^0-9鼠牛虎兔龙蛇马羊猴鸡狗猪]/g, " ")
-                       .replace(/([鼠牛虎兔龙蛇马羊猴鸡狗猪])/g, " $1 ");
-    const tokens = cleaned.split(" ").filter(t => t.length);
+    let cleaned = input.replace(/《.*?》/g, " ").replace(/[^0-9鼠牛虎兔龙蛇马羊猴鸡狗猪]/g, " ").replace(/([鼠牛虎兔龙蛇马羊猴鸡狗猪])/g, " $1 ");
+    const tokens = cleaned.split(" ").filter(t => t.length > 0);
     if (!tokens.length) return { nums: [], truncated: false };
     let results = [];
     for (let token of tokens) {
@@ -128,7 +124,7 @@
     return { nums: results, truncated };
   }
 
-  // ---------- 筛选条件匹配函数生成 (基于 numProps) ----------
+  // ---------- 筛选匹配函数 ----------
   let cachedMatchFuncs = null, lastFilterSignature = "";
   function getMatchFuncs(filters) {
     const allConds = filters || getFilterSet();
@@ -163,7 +159,7 @@
       return n => numProps[n] && numProps[n].color === colorMap[c] && numProps[n].odd === oe;
     }
     if (["金","木","水","火","土"].includes(cond)) {
-      return n => getFive(n) === cond; // 直接使用 DATA.getNumberWuxing
+      return n => getFive(n, CURRENT_YEAR) === cond;
     }
     if (["合数单","合数双","大单","大双","小单","小双"].includes(cond)) {
       if (cond === "合数单") return n => numProps[n] && numProps[n].sumOdd === "合数单";
@@ -181,14 +177,14 @@
   function computeAnalysisMainThread(input, killNums, filters) {
     const nums = parseInputCount(input).nums;
     const rawCount = new Uint16Array(50);
-    nums.forEach(n => rawCount[n]++);
+    for (let i = 0; i < nums.length; i++) rawCount[nums[i]]++;
     const killSet = new Set(killNums);
     const funcs = getMatchFuncs(filters);
     const hitCounts = new Uint8Array(50);
     for (let n = 1; n <= 49; n++) {
       let hit = killSet.has(n) ? 1 : 0;
-      for (let fn of funcs) {
-        if (fn(n)) { hit++; if (hit > 6) break; }
+      for (let i = 0; i < funcs.length; i++) {
+        if (funcs[i](n)) { hit++; if (hit > 6) break; }
       }
       hitCounts[n] = hit;
     }
@@ -208,7 +204,7 @@
   function initWorker() {
     if (analysisWorker) return;
     try {
-      analysisWorker = new Worker("worker.js?v=3.6.3");
+      analysisWorker = new Worker("worker.js");
       analysisWorker.onmessage = onWorkerMessage;
       analysisWorker.onerror = e => {
         console.error("Worker error:", e);
@@ -234,29 +230,65 @@
     } catch (err) { console.error("onWorkerMessage error:", err); }
   }
 
-  // ---------- 黑洞特效 (保留) ----------
+  // ---------- 分析触发（仅此一份，移除重复）----------
+  let debounceTimer = null;
+  function runAnalysis() {
+    initWorker();
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      try {
+        const input = DOM.numbers ? DOM.numbers.value : "";
+        const parsed = parseInputCount(input);
+        if (DOM.charCount) DOM.charCount.textContent = parsed.nums.length;
+        if (DOM.numberWarn) {
+          if (parsed.truncated) {
+            DOM.numberWarn.classList.remove("hidden");
+            if (!window._truncToastShown) { showToast("⚠️ 输入号码超过" + MAX_NUMBERS + "个，已截断"); window._truncToastShown = true; setTimeout(() => window._truncToastShown = false, 2000); }
+          } else { DOM.numberWarn.classList.add("hidden"); }
+        }
+        if (workerReady && analysisWorker) {
+          analysisWorker.postMessage({ input, killNums: state.killNums, filters: getFilterSet() });
+        } else {
+          const res = computeAnalysisMainThread(input, state.killNums, getFilterSet());
+          lastRawCount = res.rawCount;
+          renderResult(res.adjustedCount, res.adjustedTotal, res.unique, res.hitCounts, res.rawCount);
+        }
+      } catch (err) { console.error("runAnalysis error:", err); }
+    }, 200);
+  }
+  function runAnalysisMainThread() {
+    try {
+      const input = DOM.numbers ? DOM.numbers.value : "";
+      const res = computeAnalysisMainThread(input, state.killNums, getFilterSet());
+      lastRawCount = res.rawCount;
+      renderResult(res.adjustedCount, res.adjustedTotal, res.unique, res.hitCounts, res.rawCount);
+    } catch (err) {
+      console.error("runAnalysisMainThread error:", err);
+      if (DOM.result) DOM.result.innerHTML = '<div class="text-center py-8 text-red-400">分析引擎异常，请刷新重试</div>';
+    }
+  }
+  function onStateChange() { runAnalysis(); saveState(); }
+
+  // ---------- 黑洞特效 ----------
   let currentUniqueElement = null, lastUniqueNum = null;
   function launchUniqueFlyEffect(targetNum, colorClass) {
-  document.querySelectorAll(".flying-unique-ball, .blackhole, .distortion, .accretion-disk, .particle-stream").forEach(function (el) { el.remove(); });
+    document.querySelectorAll(".flying-unique-ball, .blackhole, .distortion, .accretion-disk, .particle-stream").forEach(function (el) { el.remove(); });
     var targetEl = DOM.result.querySelector('[data-num="' + targetNum + '"]');
     if (!targetEl) return;
     var targetRect = targetEl.getBoundingClientRect();
     var endX = targetRect.left + targetRect.width / 2;
     var endY = targetRect.top + targetRect.height / 2;
-    // 黑洞位置：屏幕中上部，避开底部导航抽屉
     var centerX = window.innerWidth / 2;
     var centerY = window.innerHeight * 0.35;
     var color = colorClass === "ball-red" ? "#ff3366" : colorClass === "ball-green" ? "#33cc66" : "#3366ff";
     var darkColor = colorClass === "ball-red" ? "#660022" : colorClass === "ball-green" ? "#004422" : "#002266";
     
-    // 吸积盘（旋转光环）
     var disk = document.createElement("div");
     disk.className = "accretion-disk";
     disk.style.cssText = "position:fixed;left:" + centerX + "px;top:" + centerY + "px;width:0;height:0;pointer-events:none;z-index:9998;transform:translate(-50%,-50%);";
     document.body.appendChild(disk);
     
-    var i;
-    for (i = 0; i < 4; i++) {
+    for (var i = 0; i < 4; i++) {
       (function(idx) {
         var ring = document.createElement("div");
         ring.style.cssText = "position:absolute;left:50%;top:50%;width:0;height:0;border:2px solid " + color + ";border-radius:50%;transform:translate(-50%,-50%);opacity:0.6;border-top-color:transparent;border-bottom-color:transparent;";
@@ -270,7 +302,6 @@
       })(i);
     }
     
-    // 黑洞本体
     var blackhole = document.createElement("div");
     blackhole.className = "blackhole";
     blackhole.style.cssText = "position:fixed;left:" + centerX + "px;top:" + centerY + "px;width:0;height:0;background:radial-gradient(circle,#000 20%," + darkColor + " 50%," + color + " 70%,transparent 100%);border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:9999;box-shadow:0 0 60px " + color + ", inset 0 0 40px " + color + ";";
@@ -285,32 +316,24 @@
     ], { duration: 4000, easing: 'ease-in-out' });
     bhAnim.onfinish = function() { blackhole.remove(); disk.remove(); };
     
-    // 球体：从目标位置被吸入黑洞
     var ball = document.createElement("div");
     ball.className = "flying-unique-ball " + colorClass;
     ball.textContent = String(targetNum).padStart(2, "0");
     ball.style.cssText = "position:fixed;left:" + endX + "px;top:" + endY + "px;transform:translate(-50%,-50%) scale(1);z-index:10000;";
     document.body.appendChild(ball);
     
-    // 吸入阶段（变慢：2秒）
     var startTime = performance.now();
     var phase1Duration = 2000;
-    
     function phase1(now) {
       var progress = Math.min((now - startTime) / phase1Duration, 1);
-      // 慢速缓动：ease-in-out-cubic
       var ease = progress < 0.5 ? 4 * progress * progress * progress : 1 - Math.pow(-2 * progress + 2, 3) / 2;
-      
       var currentX = endX + (centerX - endX) * ease;
       var currentY = endY + (centerY - endY) * ease;
       var scale = 1 - ease * 0.9;
       var rotate = ease * 1080;
-      
       ball.style.left = currentX + "px";
       ball.style.top = currentY + "px";
       ball.style.transform = "translate(-50%,-50%) scale(" + scale + ") rotate(" + rotate + "deg)";
-      
-      // 尾迹粒子（更频繁）
       if (progress < 1 && Math.random() > 0.5) {
         var trail = document.createElement("div");
         trail.className = "particle-stream";
@@ -321,42 +344,30 @@
           { transform: 'translate(-50%,-50%) scale(0)', opacity: 0 }
         ], { duration: 500 }).onfinish = function() { trail.remove(); };
       }
-      
       if (progress < 1) {
         requestAnimationFrame(phase1);
       } else {
-        // 进入黑洞，短暂隐藏
         ball.style.transform = "translate(-50%,-50%) scale(0)";
         ball.style.opacity = 0;
-        
-        // 延迟后喷出
         setTimeout(function() {
           phase2Start = performance.now();
           requestAnimationFrame(phase2);
         }, 400);
       }
     }
-    
-    // 喷出阶段（1.6秒）
     var phase2Start;
     var phase2Duration = 1600;
-    
     function phase2(now) {
       var progress = Math.min((now - phase2Start) / phase2Duration, 1);
       var ease = progress < 0.5 ? 4 * progress * progress * progress : 1 - Math.pow(-2 * progress + 2, 3) / 2;
-      
-      // 从黑洞喷出到目标位置
       var currentX = centerX + (endX - centerX) * ease;
       var currentY = centerY + (endY - centerY) * ease;
       var scale = 0.1 + ease * 0.9;
       var rotate = -1080 * (1 - ease);
-      
       ball.style.left = currentX + "px";
       ball.style.top = currentY + "px";
       ball.style.transform = "translate(-50%,-50%) scale(" + scale + ") rotate(" + rotate + "deg)";
       ball.style.opacity = Math.min(1, ease * 2);
-      
-      // 喷出粒子
       if (progress < 0.5 && Math.random() > 0.5) {
         var jet = document.createElement("div");
         jet.style.cssText = "position:fixed;left:" + currentX + "px;top:" + currentY + "px;width:3px;height:3px;background:" + color + ";border-radius:50%;pointer-events:none;z-index:9997;box-shadow:0 0 6px " + color + ";";
@@ -368,22 +379,17 @@
           { transform: 'translate(' + (Math.cos(jetAngle)*jetDist) + 'px,' + (Math.sin(jetAngle)*jetDist) + 'px) scale(0)', opacity: 0 }
         ], { duration: 600 }).onfinish = function() { jet.remove(); };
       }
-      
       if (progress < 1) {
         requestAnimationFrame(phase2);
       } else {
-        // 着陆
         ball.remove();
         targetEl.classList.add("landing-shock", "flash-unique");
         setTimeout(function() { targetEl.classList.remove("landing-shock"); }, 400);
         showToast("🌌 黑洞吞噬：" + String(targetNum).padStart(2, "0") + " 号");
       }
     }
-    
     requestAnimationFrame(phase1);
   }
-
-//黑洞特效结束
 
   // ---------- 渲染分析结果 ----------
   function renderResult(adjustedCount, adjustedTotal, unique, hitCounts, rawCount) {
@@ -431,9 +437,8 @@
         htmlParts.push("</div></div>");
       }
 
-      if (unique === 0) htmlParts.push('<div class="text-center py-8 text-amber-400">⚡ 请输入号码启动分析 ⚡</div>');
+      if (unique === 0) htmlParts.push('<div class="text-center py-8 text-amber-400">⚡ 所有号码频次归零，请调整筛选条件 ⚡</div>');
 
-      // 零次出现号码 (原稿中有单独展示)
       const zeroCountNumbers = [];
       if (rawCount && rawCount.length) {
         for (let n = 1; n <= 49; n++) { if (rawCount[n] === 0) zeroCountNumbers.push(n); }
@@ -489,46 +494,7 @@
     });
   }
 
-  // ---------- 防抖执行分析 ----------
-  let debounceTimer = null;
-  function runAnalysis() {
-    initWorker();
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
-      try {
-        const input = DOM.numbers ? DOM.numbers.value : "";
-        const parsed = parseInputCount(input);
-        if (DOM.charCount) DOM.charCount.textContent = parsed.nums.length;
-        if (DOM.numberWarn) {
-          if (parsed.truncated) {
-            DOM.numberWarn.classList.remove("hidden");
-            if (!window._truncToastShown) { showToast("⚠️ 输入号码超过" + MAX_NUMBERS + "个，已截断"); window._truncToastShown = true; setTimeout(() => window._truncToastShown = false, 2000); }
-          } else { DOM.numberWarn.classList.add("hidden"); }
-        }
-        if (workerReady && analysisWorker) {
-          analysisWorker.postMessage({ input, killNums: state.killNums, filters: getFilterSet(), numProps, year: new Date().getFullYear() });
-        } else {
-          const res = computeAnalysisMainThread(input, state.killNums, getFilterSet());
-          lastRawCount = res.rawCount;
-          renderResult(res.adjustedCount, res.adjustedTotal, res.unique, res.hitCounts, res.rawCount);
-        }
-      } catch (err) { console.error("runAnalysis error:", err); }
-    }, 200);
-  }
-  function runAnalysisMainThread() {
-    try {
-      const input = DOM.numbers ? DOM.numbers.value : "";
-      const res = computeAnalysisMainThread(input, state.killNums, getFilterSet());
-      lastRawCount = res.rawCount;
-      renderResult(res.adjustedCount, res.adjustedTotal, res.unique, res.hitCounts, res.rawCount);
-    } catch (err) {
-      console.error("runAnalysisMainThread error:", err);
-      if (DOM.result) DOM.result.innerHTML = '<div class="text-center py-8 text-red-400">分析引擎异常，请刷新重试</div>';
-    }
-  }
-  function onStateChange() { runAnalysis(); saveState(); }
-
-  // ---------- 开奖数据获取与渲染 (保留不变) ----------
+  // ---------- 开奖数据获取与渲染 ----------
   let isCurrentDrawComplete = false, lastLotteryPeriod = "", isFetchingLottery = false;
   function checkDrawComplete(item) {
     if (!item || !item.openCode) return false;
@@ -569,7 +535,7 @@
       const data = await res.json();
       if (!Array.isArray(data) || !data[0]) { showToast("暂无开奖数据"); return; }
       const item = data[0];
-      if (!item.openCode || typeof item.openCode !== "string" || !item.wave || !item.zodiac) { showToast("数据字段不完整"); return; }
+      if (!item.openCode || typeof item.openCode !== "string" || !item.wave) { showToast("数据字段不完整"); return; }
       try { localStorage.setItem(LS_CACHE_KEY, JSON.stringify({ data, time: Date.now() })); } catch (e) {}
       if (lastLotteryPeriod !== item.expect) { lastLotteryPeriod = item.expect; isCurrentDrawComplete = false; }
       renderLottery(item);
@@ -591,93 +557,86 @@
       if (btn) { btn.innerHTML = origHtml; btn.disabled = false; }
     }
   }
-function renderLottery(item) {
-  // 1. 解析号码与波色
-  const codes = String(item.openCode || "").split(",").map(c => escapeHtml(c.trim()));
-  const waves = String(item.wave || "").split(",").map(w => {
-    w = w.trim();
-    if (w === "红" || w === "red") return "red";
-    if (w === "蓝" || w === "blue") return "blue";
-    if (w === "绿" || w === "green") return "green";
-    return w;
-  });
 
-  // 2. 本地计算生肖和五行（不再依赖 API 的 zodiac）
-  const zodiacs = codes.map(c => {
-    const n = parseInt(c, 10);
-    if (isNaN(n) || n < 1 || n > 49) return "";
-    return numProps[n]?.shengXiao || "";   // 直接从本地属性取生肖
-  });
+  function renderLottery(item) {
+    const codes = String(item.openCode || "").split(",").map(c => escapeHtml(c.trim()));
+    const waves = String(item.wave || "").split(",").map(w => {
+      w = w.trim();
+      if (w === "红" || w === "red") return "red";
+      if (w === "蓝" || w === "blue") return "blue";
+      if (w === "绿" || w === "green") return "green";
+      return w;
+    });
+    const zodiacs = codes.map(c => {
+      const n = parseInt(c, 10);
+      if (isNaN(n) || n < 1 || n > 49) return "";
+      return numProps[n]?.shengXiao || "";
+    });
 
-  const container = DOM.lotteryBalls;
-  if (!container) return;
-  container.className = "result-balls-row";
-  container.innerHTML = "";
+    const container = DOM.lotteryBalls;
+    if (!container) return;
+    container.className = "result-balls-row";
+    container.innerHTML = "";
 
-  const wxClassMap = { 金: "wx-gold", 木: "wx-wood", 水: "wx-water", 火: "wx-fire", 土: "wx-earth" };
+    const wxClassMap = { 金: "wx-gold", 木: "wx-wood", 水: "wx-water", 火: "wx-fire", 土: "wx-earth" };
 
-  // 3. 渲染前 6 个正码
-  for (let i = 0; i < 6 && i < codes.length; i++) {
-    const num = parseInt(codes[i], 10);
-    const colorClass = waves[i] === "red" ? "result-ball-red" : (waves[i] === "green" ? "result-ball-green" : "result-ball-blue");
-    const wx = (num >= 1 && num <= 49) ? (numProps[num]?.five || "?") : "?";   // 使用本地五行
-    const wxCls = wxClassMap[wx] || "";
-
-    const div = document.createElement("div");
-    div.className = "result-ball-item";
-    div.innerHTML = `<div class="result-ball ${colorClass}" style="animation-delay: ${i * 150}ms">${escapeHtml(codes[i].padStart(2, "0"))}<div class="result-ball-meta">${escapeHtml(zodiacs[i])}/<span class="${wxCls}">${wx}</span></div></div>`;
-    container.appendChild(div);
+    for (let i = 0; i < 6 && i < codes.length; i++) {
+      const num = parseInt(codes[i], 10);
+      const colorClass = waves[i] === "red" ? "result-ball-red" : (waves[i] === "green" ? "result-ball-green" : "result-ball-blue");
+      const wx = (num >= 1 && num <= 49) ? (numProps[num]?.five || "?") : "?";
+      const wxCls = wxClassMap[wx] || "";
+      const div = document.createElement("div");
+      div.className = "result-ball-item";
+      div.innerHTML = `<div class="result-ball ${colorClass}" style="animation-delay: ${i * 150}ms">${escapeHtml(codes[i].padStart(2, "0"))}<div class="result-ball-meta">${escapeHtml(zodiacs[i])}/<span class="${wxCls}">${wx}</span></div></div>`;
+      container.appendChild(div);
+    }
+    if (codes.length >= 7) {
+      const plus = document.createElement("div");
+      plus.className = "result-plus-sign";
+      plus.textContent = "+";
+      container.appendChild(plus);
+      const num = parseInt(codes[6], 10);
+      const colorClass = waves[6] === "red" ? "result-ball-red" : (waves[6] === "green" ? "result-ball-green" : "result-ball-blue");
+      const wx = (num >= 1 && num <= 49) ? (numProps[num]?.five || "?") : "?";
+      const wxCls = wxClassMap[wx] || "";
+      const div = document.createElement("div");
+      div.className = "result-ball-item";
+      div.innerHTML = `<div class="result-ball ${colorClass}" style="animation-delay: ${6 * 150}ms">${escapeHtml(codes[6].padStart(2, "0"))}<div class="result-ball-meta">${escapeHtml(zodiacs[6])}/<span class="${wxCls}">${wx}</span></div></div>`;
+      container.appendChild(div);
+    }
+    void container.offsetHeight;
+    if (DOM.lotteryPeriod) DOM.lotteryPeriod.textContent = escapeHtml(item.expect || "--");
+    if (DOM.lotteryTime) DOM.lotteryTime.textContent = escapeHtml((item.openTime || "--").replace(" ", "\n"));
   }
 
-  // 4. 特码（第 7 个号码）
-  if (codes.length >= 7) {
-    const plus = document.createElement("div");
-    plus.className = "result-plus-sign";
-    plus.textContent = "+";
-    container.appendChild(plus);
-
-    const num = parseInt(codes[6], 10);
-    const colorClass = waves[6] === "red" ? "result-ball-red" : (waves[6] === "green" ? "result-ball-green" : "result-ball-blue");
-    const wx = (num >= 1 && num <= 49) ? (numProps[num]?.five || "?") : "?";
-    const wxCls = wxClassMap[wx] || "";
-
-    const div = document.createElement("div");
-    div.className = "result-ball-item";
-    div.innerHTML = `<div class="result-ball ${colorClass}" style="animation-delay: ${6 * 150}ms">${escapeHtml(codes[6].padStart(2, "0"))}<div class="result-ball-meta">${escapeHtml(zodiacs[6])}/<span class="${wxCls}">${wx}</span></div></div>`;
-    container.appendChild(div);
-  }
-
-  // 5. 强制重绘触发动画
-  void container.offsetHeight;
-
-  if (DOM.lotteryPeriod) DOM.lotteryPeriod.textContent = escapeHtml(item.expect || "--");
-  if (DOM.lotteryTime) DOM.lotteryTime.textContent = escapeHtml((item.openTime || "--").replace(" ", "\n"));
-}
-  // ---------- 历史记录 (保留) ----------
+  // ---------- 历史记录 ----------
   let currentHistoryData = [], currentHistorySorted = [], currentHistoryPage = 1, historyCache = {}, historyYearLoaded = null;
- function renderBallsHTML(codes, waves, zodiacs, year = CURRENT_YEAR) {
-  let html = "";
-  codes.forEach((code, i) => {
-    const wave = waves[i];
-    const zodiac = zodiacs[i];
-    const cc = wave === "blue" || wave === "蓝" ? "history-ball-blue" : wave === "green" || wave === "绿" ? "history-ball-green" : "history-ball-red";
-    const num = parseInt(code, 10);
-    // 根据号码和开奖年份计算五行
-    const five = (num >= 1 && num <= 49) ? getNumberWuxing(num, year) : "";
-    html += `<div class="history-ball-card ${cc}"><div class="history-ball-number">${escapeHtml(code)}</div><div class="history-ball-tag">${escapeHtml(zodiac || "")}/${escapeHtml(five)}</div></div>`;
-    if (i === 5) html += '<span class="history-plus-sign">+</span>';
-  });
-  return html;
-}
+
+  function renderBallsHTML(codes, waves, zodiacs, year) {
+    year = year || CURRENT_YEAR;
+    let html = "";
+    codes.forEach((code, i) => {
+      const wave = waves[i];
+      const zodiac = zodiacs[i];
+      const cc = wave === "blue" || wave === "蓝" ? "history-ball-blue" : wave === "green" || wave === "绿" ? "history-ball-green" : "history-ball-red";
+      const num = parseInt(code, 10);
+      const five = (num >= 1 && num <= 49) ? getFive(num, year) : "";
+      html += `<div class="history-ball-card ${cc}"><div class="history-ball-number">${escapeHtml(code)}</div><div class="history-ball-tag">${escapeHtml(zodiac || "")}/${escapeHtml(five)}</div></div>`;
+      if (i === 5) html += '<span class="history-plus-sign">+</span>';
+    });
+    return html;
+  }
+
   function ensureHistorySorted() {
     if (currentHistorySorted.length > 0) return;
     const seen = new Set();
     const unique = [];
-    currentHistoryData.forEach(item => {
+    for (const item of currentHistoryData) {
       if (item && item.expect && !seen.has(item.expect)) { seen.add(item.expect); unique.push(item); }
-    });
+    }
     currentHistorySorted = unique.sort((a, b) => String(b.expect).localeCompare(String(a.expect), undefined, { numeric: true }));
   }
+
   function renderHistoryPage() {
     try {
       const cont = document.getElementById("historyContent");
@@ -694,20 +653,21 @@ function renderLottery(item) {
       const start = (currentHistoryPage - 1) * HISTORY_PAGE_SIZE;
       const pageData = sorted.slice(start, start + HISTORY_PAGE_SIZE);
       const frag = document.createDocumentFragment();
-      for (let i = 0; i < pageData.length; i++) {
-        const item = pageData[i];
+      for (const item of pageData) {
         const expect = escapeHtml(item.expect || "");
         let ballsHtml = "";
         if (item.openCode && item.openCode.trim()) {
-          const codes = item.openCode.split(",").map(function (c) { return escapeHtml(c.trim()); });
-          const waves = (item.wave || "").split(",").map(function (w) { return escapeHtml(w.trim()); });
-          const zodiacs = (item.zodiac || "").split(",").map(function (z) { return escapeHtml(z.trim()); });
+          const codes = item.openCode.split(",").map(c => escapeHtml(c.trim()));
+          const waves = (item.wave || "").split(",").map(w => escapeHtml(w.trim()));
+          const zodiacs = (item.zodiac || "").split(",").map(z => escapeHtml(z.trim()));
           const recordYear = historyYearLoaded || CURRENT_YEAR;
           ballsHtml = renderBallsHTML(codes, waves, zodiacs, recordYear);
-        } else { ballsHtml = '<div style="display:flex; justify-content:center; align-items:center; padding:24px 0; color:#fbbf24; font-size:14px; font-weight:500;">待开奖</div>'; }
+        } else {
+          ballsHtml = '<div style="display:flex; justify-content:center; align-items:center; padding:24px 0; color:#fbbf24; font-size:14px; font-weight:500;">待开奖</div>';
+        }
         const div = document.createElement("div");
         div.className = "history-item";
-        div.innerHTML = '<div class="history-item-header">第' + expect.slice(4) + "期 · " + escapeHtml(item.openTime && item.openTime.slice(5, 16) || "") + '</div><div class="history-balls-row">' + ballsHtml + "</div>";
+        div.innerHTML = `<div class="history-item-header">第${expect.slice(4)}期 · ${escapeHtml(item.openTime && item.openTime.slice(5, 16) || "")}</div><div class="history-balls-row">${ballsHtml}</div>`;
         frag.appendChild(div);
       }
       if (cont) { cont.innerHTML = ""; cont.appendChild(frag); }
@@ -722,10 +682,14 @@ function renderLottery(item) {
         if (prevBtn) prevBtn.disabled = currentHistoryPage <= 1;
         if (nextBtn) nextBtn.disabled = currentHistoryPage >= totalPages;
       }
-    } catch (err) { console.error("renderHistoryPage error:", err); }
+    } catch (e) {
+      console.error("renderHistoryPage error:", e);
+      const cont = document.getElementById("historyContent");
+      if (cont) cont.innerHTML = '<div style="color:#f87171;">历史加载失败</div>';
+    }
   }
 
-  // ---------- 抽屉系统 (移除 live 模板) ----------
+  // ---------- 抽屉系统 ----------
   const DrawerSystem = {
     current: null,
     templates: {
@@ -733,89 +697,59 @@ function renderLottery(item) {
       shengxiao: () => {
         const sxs = ["鼠","牛","虎","兔","龙","蛇","马","羊","猴","鸡","狗","猪"];
         const sel = state.selectedFilters.shengxiao;
-        return '<div class="dgrid-6">' + sxs.map(sx =>
-          `<label><input type="checkbox" class="filter-checkbox hidden" value="生肖${sx}" data-drawer="shengxiao" ${sel.includes("生肖"+sx)?"checked":""}><span class="filter-label dbtn">${sx}</span></label>`
-        ).join("") + "</div>";
+        return '<div class="dgrid-6">' + sxs.map(sx => `<label><input type="checkbox" class="filter-checkbox hidden" value="生肖${sx}" data-drawer="shengxiao" ${sel.includes("生肖"+sx)?"checked":""}><span class="filter-label dbtn">${sx}</span></label>`).join("") + "</div>";
       },
-      haomatou: function () {
+      haomatou: () => {
         const heads = [["0头单","1头单","2头单","3头单","4头单"],["0头双","1头双","2头双","3头双","4头双"]];
         const sel = state.selectedFilters.haomatou;
-        return heads.map(function (row) {
-          return '<div class="dflex">' + row.map(function (h) {
-            return '<label class="dflex-1"><input type="checkbox" class="filter-checkbox hidden" value="' + h + '" data-drawer="haomatou" ' + (sel.includes(h) ? "checked" : "") + '><span class="filter-label dbtn dbtn-sm">' + h + "</span></label>";
-          }).join("") + "</div>";
-        }).join("");
+        return heads.map(row => '<div class="dflex">' + row.map(h => `<label class="dflex-1"><input type="checkbox" class="filter-checkbox hidden" value="${h}" data-drawer="haomatou" ${sel.includes(h)?"checked":""}><span class="filter-label dbtn dbtn-sm">${h}</span></label>`).join("") + "</div>").join("");
       },
-      weishu: function () {
+      weishu: () => {
         const tails = [["0尾","1尾","2尾","3尾","4尾"],["5尾","6尾","7尾","8尾","9尾"]];
         const sel = state.selectedFilters.weishu;
-        return tails.map(function (row) {
-          return '<div class="dflex">' + row.map(function (t) {
-            return '<label class="dflex-1"><input type="checkbox" class="filter-checkbox hidden" value="' + t + '" data-drawer="weishu" ' + (sel.includes(t) ? "checked" : "") + '><span class="filter-label dbtn dbtn-sm">' + t + "</span></label>";
-          }).join("") + "</div>";
-        }).join("");
+        return tails.map(row => '<div class="dflex">' + row.map(t => `<label class="dflex-1"><input type="checkbox" class="filter-checkbox hidden" value="${t}" data-drawer="weishu" ${sel.includes(t)?"checked":""}><span class="filter-label dbtn dbtn-sm">${t}</span></label>`).join("") + "</div>").join("");
       },
-      shuduan: function () {
+      shuduan: () => {
         const duans = ["1段","2段","3段","4段","5段","6段","7段"];
         const sel = state.selectedFilters.shuduan;
-        return '<div class="dflex-wrap">' + duans.map(function (d) {
-          return '<label><input type="checkbox" class="filter-checkbox hidden" value="' + d + '" data-drawer="shuduan" ' + (sel.includes(d) ? "checked" : "") + '><span class="filter-label dbtn dbtn-md">' + d + "</span></label>";
-        }).join("") + "</div>";
+        return '<div class="dflex-wrap">' + duans.map(d => `<label><input type="checkbox" class="filter-checkbox hidden" value="${d}" data-drawer="shuduan" ${sel.includes(d)?"checked":""}><span class="filter-label dbtn dbtn-md">${d}</span></label>`).join("") + "</div>";
       },
-      bose: function () {
+      bose: () => {
         const items = [["红波单","蓝波单","绿波单"],["红波双","蓝波双","绿波双"]];
         const sel = state.selectedFilters.bose;
-        return items.map(function (row) {
-          return '<div class="dflex">' + row.map(function (item) {
-            return '<label class="dflex-1"><input type="checkbox" class="filter-checkbox hidden" value="' + item + '" data-drawer="bose" ' + (sel.includes(item) ? "checked" : "") + '><span class="filter-label dbtn dbtn-sm">' + item.replace("波", "") + "</span></label>";
-          }).join("") + "</div>";
-        }).join("");
+        return items.map(row => '<div class="dflex">' + row.map(item => `<label class="dflex-1"><input type="checkbox" class="filter-checkbox hidden" value="${item}" data-drawer="bose" ${sel.includes(item)?"checked":""}><span class="filter-label dbtn dbtn-sm">${item.replace("波","")}</span></label>`).join("") + "</div>").join("");
       },
       wuxing: () => {
-        const table = generateWuxingTable(new Date().getFullYear());
+        const table = generateWuxingTable(CURRENT_YEAR);
         const wx = {};
-        for (let [k,v] of Object.entries(table)) wx[k] = v.map(n=>String(n).padStart(2,'0')).join(' ');
+        for (const [k,v] of Object.entries(table)) wx[k] = v.map(n => String(n).padStart(2,'0')).join(' ');
         const sel = state.selectedFilters.wuxing;
-        return '<div class="dspace-y">' + Object.entries(wx).map(([k,v]) =>
-          `<div class="wuxing-row"><label class="ditems-center" style="gap:8px;min-width:0;flex-shrink:0;"><input type="checkbox" class="filter-checkbox hidden" value="${k}" data-drawer="wuxing" ${sel.includes(k)?"checked":""}><span class="filter-label dbtn dbtn-fixed wuxing-btn-fixed">${k}</span></label><span class="wuxing-nums">${v}</span></div>`
-        ).join("") + "</div>";
+        return '<div class="dspace-y">' + Object.entries(wx).map(([k,v]) => `<div class="wuxing-row"><label class="ditems-center" style="gap:8px;min-width:0;flex-shrink:0;"><input type="checkbox" class="filter-checkbox hidden" value="${k}" data-drawer="wuxing" ${sel.includes(k)?"checked":""}><span class="filter-label dbtn dbtn-fixed wuxing-btn-fixed">${k}</span></label><span class="wuxing-nums">${v}</span></div>`).join("") + "</div>";
       },
-      bandanshuang: function () {
+      bandanshuang: () => {
         const items = [["合数单","小单","大单"],["合数双","小双","大双"]];
         const sel = state.selectedFilters.bandanshuang;
-        return items.map(function (row) {
-          return '<div class="dflex">' + row.map(function (item) {
-            return '<label class="dflex-1"><input type="checkbox" class="filter-checkbox hidden" value="' + item + '" data-drawer="bandanshuang" ' + (sel.includes(item) ? "checked" : "") + '><span class="filter-label dbtn dbtn-sm">' + item + "</span></label>";
-          }).join("") + "</div>";
-        }).join("");
+        return items.map(row => '<div class="dflex">' + row.map(item => `<label class="dflex-1"><input type="checkbox" class="filter-checkbox hidden" value="${item}" data-drawer="bandanshuang" ${sel.includes(item)?"checked":""}><span class="filter-label dbtn dbtn-sm">${item}</span></label>`).join("") + "</div>").join("");
       },
-      heshu: function () {
-        const hes = Array.from({ length: 13 }, function (_, i) { return (i + 1) + "合"; });
+      heshu: () => {
+        const hes = Array.from({ length: 13 }, (_, i) => (i + 1) + "合");
         const sel = state.selectedFilters.heshu;
-        return '<div class="dgrid-4">' + hes.map(function (h) {
-          return '<label><input type="checkbox" class="filter-checkbox hidden" value="' + h + '" data-drawer="heshu" ' + (sel.includes(h) ? "checked" : "") + '><span class="filter-label dbtn dbtn-sm">' + h + "</span></label>";
-        }).join("") + "</div>";
+        return '<div class="dgrid-4">' + hes.map(h => `<label><input type="checkbox" class="filter-checkbox hidden" value="${h}" data-drawer="heshu" ${sel.includes(h)?"checked":""}><span class="filter-label dbtn dbtn-sm">${h}</span></label>`).join("") + "</div>";
       },
-       history: function () {
+      history: () => {
         let opts = "";
-        const currentYear = new Date().getFullYear();
-        for (let y = currentYear; y >= 2020; y--) opts += '<option value="' + y + '">' + y + "年</option>";
+        for (let y = new Date().getFullYear(); y >= 2020; y--) opts += `<option value="${y}">${y}年</option>`;
         return [
           '<div>',
-            '<select id="historyYear" class="dselect"><option value="">选择年份</option>' + opts + "</select>",
-            '<div id="historyLoading" class="dhidden dtext-center dpy-4">',
-              '<svg class="animate-spin" style="width:24px; height:24px; margin:0 auto; color:#00ffea;" fill="none" viewBox="0 0 24 24">',
-                '<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>',
-                '<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>',
-              "</svg>",
-            "</div>",
+            `<select id="historyYear" class="dselect"><option value="">选择年份</option>${opts}</select>`,
+            '<div id="historyLoading" class="dhidden dtext-center dpy-4"><svg class="animate-spin" style="width:24px;height:24px;margin:0 auto;color:#00ffea;" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>',
             '<div id="historyContent" class="dmt-3 hide-scrollbar"></div>',
             '<div id="historyPagination" class="dflex-between dmt-6 dpx-1 dhidden">',
               '<button id="history-prev" class="dpage-btn">← 上1页</button>',
-              '<div class="dtext-sm" style="text-align:center;">第 <span id="historyPageNum" style="font-weight:bold; color:#00ffea;">1</span> 页 / <span id="historyTotalPages" class="dtext-gray">1</span> 页</div>',
+              '<div class="dtext-sm" style="text-align:center;">第 <span id="historyPageNum" style="font-weight:bold;color:#00ffea;">1</span> 页 / <span id="historyTotalPages" class="dtext-gray">1</span> 页</div>',
               '<button id="history-next" class="dpage-btn">下1页 →</button>',
-            "</div>",
-          "</div>"
+            '</div>',
+          '</div>'
         ].join("");
       }
     },
@@ -833,10 +767,8 @@ function renderLottery(item) {
       DOM.drawer_container.classList.add("open");
       this.updateNavState(type);
       if (type === "history") setTimeout(() => { const sel = document.getElementById("historyYear"); if (sel && !sel.value) sel.value = historyYearLoaded || ""; if (sel) sel.dispatchEvent(new Event("change")); }, 50);
-      // 不再调用 connectLiveSource
     },
     close() {
-      // 移除 destroyLivePlayer 调用
       DOM.drawer_container.classList.remove("open");
       DOM.drawer_overlay.classList.add("opacity-0");
       DOM.drawer_overlay.style.opacity = "0";
@@ -918,7 +850,7 @@ function renderLottery(item) {
   }
   window.copyResult = copyResult;
 
-  // ---------- 自动刷新开奖 (保留) ----------
+  // ---------- 自动刷新开奖 ----------
   function initAutoRefresh() {
     setInterval(() => {
       if (isCurrentDrawComplete || isFetchingLottery) return;
@@ -933,8 +865,8 @@ function renderLottery(item) {
     }, 1000);
   }
 
-  // ---------- 粒子背景 (保留) ----------
-function initParticles() {
+  // ---------- 粒子背景 ----------
+  function initParticles() {
     const canvas = document.getElementById("particle-canvas");
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -969,7 +901,6 @@ function initParticles() {
     document.addEventListener("visibilitychange", function () { if (document.hidden) stop(); else start(); });
   }
 
-
   // ---------- 初始化 ----------
   function init() {
     try {
@@ -983,7 +914,7 @@ function initParticles() {
         btn.addEventListener("click", e => {
           e.stopPropagation();
           const drawer = btn.dataset.drawer;
-          if (drawer === "selectnone") { clearAllFilters(); const killInput = document.getElementById("kill-input"); if (killInput) killInput.value = ""; DrawerSystem.close(); showToast("已清空所有筛选"); }
+          if (drawer === "selectnone") { clearAllFilters(); DrawerSystem.close(); showToast("已清空所有筛选"); }
           else DrawerSystem.open(drawer);
         });
       });
@@ -991,7 +922,7 @@ function initParticles() {
       if (DOM.drawer_overlay) DOM.drawer_overlay.addEventListener("click", () => DrawerSystem.close());
       fetchLottery(); runAnalysis(); initAutoRefresh(); initParticles();
       window.addEventListener("beforeunload", () => terminateWorker());
-      console.log("%c✅ 神码再现 v3.6.3 (无直播版) 已加载", "color:#00ffea;font-weight:bold");
+      console.log("%c✅ 神码再现 v3.6.3 无直播版已加载", "color:#00ffea;font-weight:bold");
     } catch (e) { console.error("初始化失败:", e); alert("页面初始化出错，请刷新重试。错误: " + e.message); }
   }
 
