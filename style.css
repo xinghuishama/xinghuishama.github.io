@@ -98,11 +98,7 @@ body {
   overflow: visible;
   transition: transform .25s cubic-bezier(.175, .885, .32, 1.275);
   transform: translateZ(0);
-  background:
-    radial-gradient(circle at 35% 25%, rgba(255,255,255,.95) 0%, transparent 25%),
-    radial-gradient(circle at 50% 30%, rgba(255,255,255,.4) 0%, transparent 40%),
-    radial-gradient(circle at 50% 100%, rgba(0,0,0,.4) 0%, transparent 60%),
-    linear-gradient(135deg, #4488ff 0%, #2244cc 60%, #112288 100%);
+  background: linear-gradient(135deg, #4488ff 0%, #2244cc 60%, #112288 100%);
   border: none;
   box-shadow:
     0 4px 8px rgba(0,0,0,.5),
@@ -127,25 +123,13 @@ body {
 .ball-3d:active { transform: scale(0.92) translateZ(0); }
 
 .ball-red {
-  background:
-    radial-gradient(circle at 65% 25%, rgba(255,255,255,.8) 0%, transparent 35%),
-    radial-gradient(circle at 50% 30%, rgba(255,255,255,.2) 0%, transparent 40%),
-    radial-gradient(circle at 50% 100%, rgba(0,0,0,.4) 0%, transparent 60%),
-    linear-gradient(135deg, #ff3333 0%, #cc0000 60%, #990000 100%);
+  background: linear-gradient(135deg, #ff3333 0%, #cc0000 60%, #990000 100%);
 }
 .ball-green {
-  background:
-    radial-gradient(circle at 65% 25%, rgba(255,255,255,.8) 0%, transparent 35%),
-    radial-gradient(circle at 50% 30%, rgba(255,255,255,.2) 0%, transparent 40%),
-    radial-gradient(circle at 50% 100%, rgba(0,0,0,.4) 0%, transparent 60%),
-    linear-gradient(135deg, #33cc33 0%, #118811 60%, #005500 100%);
+  background: linear-gradient(135deg, #33cc33 0%, #118811 60%, #005500 100%);
 }
 .ball-blue {
-  background:
-    radial-gradient(circle at 65% 25%, rgba(255,255,255,.8) 0%, transparent 35%),
-    radial-gradient(circle at 50% 30%, rgba(255,255,255,.2) 0%, transparent 40%),
-    radial-gradient(circle at 50% 100%, rgba(0,0,0,.4) 0%, transparent 60%),
-    linear-gradient(135deg, #4488ff 0%, #2244cc 60%, #112288 100%);
+  background: linear-gradient(135deg, #4488ff 0%, #2244cc 60%, #112288 100%);
 }
 
 .ball-gray {
@@ -345,31 +329,14 @@ body {
   opacity: 0;
   transform: scale(0);
 }
-.result-ball::after {
-  content: '';
-  position: absolute;
-  top: 6%;
-  left: 18%;
-  width: 30%;
-  height: 18%;
-  background: radial-gradient(ellipse at center, rgba(255,255,255,0.7) 0%, transparent 65%);
-  border-radius: 50%;
-  pointer-events: none;
-}
 .result-ball-red {
-  background:
-    radial-gradient(ellipse at 50% 25%, rgba(255,255,255,0.22) 0%, transparent 50%),
-    linear-gradient(180deg, #ff5555 0%, #dd1111 45%, #aa0000 100%);
+  background: linear-gradient(180deg, #ff5555 0%, #dd1111 45%, #aa0000 100%);
 }
 .result-ball-green {
-  background:
-    radial-gradient(ellipse at 50% 25%, rgba(255,255,255,0.22) 0%, transparent 50%),
-    linear-gradient(180deg, #44dd44 0%, #229922 45%, #116611 100%);
+  background: linear-gradient(180deg, #44dd44 0%, #229922 45%, #116611 100%);
 }
 .result-ball-blue {
-  background:
-    radial-gradient(ellipse at 50% 25%, rgba(255,255,255,0.22) 0%, transparent 50%),
-    linear-gradient(180deg, #5599ff 0%, #2244cc 45%, #112288 100%);
+  background: linear-gradient(180deg, #5599ff 0%, #2244cc 45%, #112288 100%);
 }
 .result-plus-sign {
   font-size: 26px;
