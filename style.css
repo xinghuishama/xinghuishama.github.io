@@ -511,7 +511,7 @@ body {
 }
 @media (max-width: 420px) {
   .dgrid-6 {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 }
 @media (max-width: 400px) {
