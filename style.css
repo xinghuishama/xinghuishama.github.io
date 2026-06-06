@@ -79,7 +79,7 @@ body {
 .dhidden { display: none !important; }
 
 /* 3D 球等样式保持不变，与原 style.css 完全一致，仅移除直播相关 */
-/* ... 此处省略大量原有样式，实际文件请复制原 style.css 并删除 .dlive-btn、.dvideo-box、.doverlay 等定义 ... */
+
 /* ======================== 3D 号码球（分析结果区） ======================== */
 .ball-3d{position:relative;width:36px;height:36px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font:700 14px/1 'Orbitron',sans-serif;color:#fff;box-shadow:0 2px 6px rgba(0,0,0,0.3);transition:filter .2s ease,transform .1s;cursor:pointer;user-select:none;-webkit-user-select:none;overflow:visible;transform:translateZ(0);border:none}
 .ball-3d::after{content:'';position:absolute;z-index:-1;left:10%;top:10%;width:80%;height:80%;border-radius:50%;background:rgba(0,0,0,.35);filter:blur(8px);transform:translate(6px,6px);pointer-events:none}
