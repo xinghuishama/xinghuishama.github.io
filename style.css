@@ -81,63 +81,14 @@ body {
 /* 3D 球等样式保持不变，与原 style.css 完全一致，仅移除直播相关 */
 /* ... 此处省略大量原有样式，实际文件请复制原 style.css 并删除 .dlive-btn、.dvideo-box、.doverlay 等定义 ... */
 /* ======================== 3D 号码球（分析结果区） ======================== */
-.ball-3d {
-  position: relative;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font: 700 14px/1 'Orbitron', sans-serif;
-  color: #fff;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.5);
-  cursor: pointer;
-  user-select: none;
-  -webkit-user-select: none;
-  overflow: visible;
-  transition: transform .25s cubic-bezier(.175, .885, .32, 1.275);
-  transform: translateZ(0);
-  background: linear-gradient(135deg, #4488ff 0%, #2244cc 60%, #112288 100%);
-  border: none;
-  box-shadow:
-    0 4px 8px rgba(0,0,0,.5),
-    0 8px 16px rgba(0,0,0,.3),
-    inset 0 -3px 8px rgba(0,0,0,.3),
-    inset 0 3px 8px rgba(255,255,255,.4);
-}
-.ball-3d::after {
-  content: '';
-  position: absolute;
-  z-index: -1;
-  left: 10%;
-  top: 10%;
-  width: 80%;
-  height: 80%;
-  border-radius: 50%;
-  background: rgba(0,0,0,.35);
-  filter: blur(8px);
-  transform: translate(6px, 6px);
-  pointer-events: none;
-}
-.ball-3d:active { transform: scale(0.92) translateZ(0); }
-
-.ball-red {
-  background: linear-gradient(135deg, #ff3333 0%, #cc0000 60%, #990000 100%);
-}
-.ball-green {
-  background: linear-gradient(135deg, #33cc33 0%, #118811 60%, #005500 100%);
-}
-.ball-blue {
-  background: linear-gradient(135deg, #4488ff 0%, #2244cc 60%, #112288 100%);
-}
-
-.ball-gray {
-  background: #666 !important;
-  box-shadow: 0 0 4px rgba(0,0,0,0.5) !important;
-  filter: none !important;
-}
-.ball-gray::after { display: none; }
+.ball-3d{position:relative;width:36px;height:36px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font:700 14px/1 'Orbitron',sans-serif;color:#fff;box-shadow:0 2px 6px rgba(0,0,0,0.3);transition:filter .2s ease,transform .1s;cursor:pointer;user-select:none;-webkit-user-select:none;overflow:visible;transform:translateZ(0);border:none}
+.ball-3d::after{content:'';position:absolute;z-index:-1;left:10%;top:10%;width:80%;height:80%;border-radius:50%;background:rgba(0,0,0,.35);filter:blur(8px);transform:translate(6px,6px);pointer-events:none}
+.ball-3d:active{transform:scale(0.92) translateZ(0)}
+.ball-red{background:radial-gradient(circle at 35% 25%,rgba(255,255,255,0.95) 0%,transparent 25%),radial-gradient(circle at 50% 30%,rgba(255,255,255,0.4) 0%,transparent 40%),radial-gradient(circle at 50% 100%,rgba(0,0,0,0.4) 0%,transparent 60%),linear-gradient(180deg,#ff0000 0%,#cc0044 100%)}
+.ball-green{background:radial-gradient(circle at 35% 25%,rgba(255,255,255,0.95) 0%,transparent 25%),radial-gradient(circle at 50% 30%,rgba(255,255,255,0.4) 0%,transparent 40%),radial-gradient(circle at 50% 100%,rgba(0,0,0,0.4) 0%,transparent 60%),linear-gradient(180deg,#008000 0%,#00aa44 100%)}
+.ball-blue{background:radial-gradient(circle at 35% 25%,rgba(255,255,255,0.95) 0%,transparent 25%),radial-gradient(circle at 50% 30%,rgba(255,255,255,0.4) 0%,transparent 40%),radial-gradient(circle at 50% 100%,rgba(0,0,0,0.4) 0%,transparent 60%),linear-gradient(180deg,#0066ff 0%,#0044cc 100%)}
+.ball-gray{background:#666!important;box-shadow:0 0 4px rgba(0,0,0,0.5)!important;filter:none!important}
+.ball-gray::after{display:none}
 
 .hit-mark {
   position: absolute;
