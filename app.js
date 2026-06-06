@@ -496,10 +496,27 @@
 
   // ---------- 开奖数据获取与渲染 ----------
   let isCurrentDrawComplete = false, lastLotteryPeriod = "", isFetchingLottery = false;
+  let countdownTimer = null;
   function checkDrawComplete(item) {
     if (!item || !item.openCode) return false;
     const codes = String(item.openCode).split(",").filter(c => c.trim() !== "");
     return codes.length >= 7;
+  }
+  function getNextDrawTime() {
+    const now = new Date();
+    const draw = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 21, 35, 0);
+    if (now >= draw) draw.setDate(draw.getDate() + 1);
+    return draw;
+  }
+  function updateCountdown() {
+    if (!DOM.lotteryTime) return;
+    const nextDraw = getNextDrawTime();
+    const diff = nextDraw - Date.now();
+    if (diff <= 0) { DOM.lotteryTime.textContent = "开奖中..."; return; }
+    const h = Math.floor(diff / 3600000);
+    const m = Math.floor((diff % 3600000) / 60000);
+    const s = Math.floor((diff % 60000) / 1000);
+    DOM.lotteryTime.textContent = "距开奖 " + String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
   }
   async function safeFetch(url, options = {}, retries = 2) {
     for (let i = 0; i <= retries; i++) {
@@ -537,10 +554,17 @@
       const item = data[0];
       if (!item.openCode || typeof item.openCode !== "string" || !item.wave) { showToast("数据字段不完整"); return; }
       try { localStorage.setItem(LS_CACHE_KEY, JSON.stringify({ data, time: Date.now() })); } catch (e) {}
-      if (lastLotteryPeriod !== item.expect) { lastLotteryPeriod = item.expect; isCurrentDrawComplete = false; }
+      const isNewPeriod = lastLotteryPeriod !== item.expect;
+      if (isNewPeriod) { lastLotteryPeriod = item.expect; isCurrentDrawComplete = false; }
       renderLottery(item);
-      if (!isCurrentDrawComplete && checkDrawComplete(item)) { isCurrentDrawComplete = true; showToast("当期开奖已完成，自动刷新停止"); }
-      else { showToast("刷新成功"); }
+      if (checkDrawComplete(item)) {
+        if (!isCurrentDrawComplete) { isCurrentDrawComplete = true; showToast("当期开奖已完成"); }
+        else if (isNewPeriod) { isCurrentDrawComplete = true; showToast("新期号已更新"); }
+        else { showToast("刷新成功"); }
+      } else {
+        isCurrentDrawComplete = false;
+        showToast("刷新成功 - 等待开奖");
+      }
       if (DOM.lastRefreshTime) DOM.lastRefreshTime.textContent = "上次刷新：" + new Date().toLocaleTimeString();
     } catch (e) {
       console.error("fetchLottery error:", e);
@@ -852,15 +876,29 @@
 
   // ---------- 自动刷新开奖 ----------
   function initAutoRefresh() {
+    // 启动开奖倒计时显示
+    updateCountdown();
+    countdownTimer = setInterval(updateCountdown, 1000);
+    // 自动刷新策略：开奖时段高频 + 全时段兜底刷新
     setInterval(() => {
-      if (isCurrentDrawComplete || isFetchingLottery) return;
+      if (isFetchingLottery || document.visibilityState !== "visible") return;
       const now = new Date();
       const totalSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
-      if (totalSec >= 21*3600+33*60+30 && totalSec <= 21*3600+35*60+0 && document.visibilityState === "visible") {
+      const DRAW_START = 21 * 3600 + 30 * 60; // 21:30
+      const DRAW_END   = 21 * 3600 + 40 * 60; // 21:40
+      const isInDrawWindow = totalSec >= DRAW_START && totalSec <= DRAW_END;
+      // 开奖时间段：每5秒刷新一次（不判断 isCurrentDrawComplete，以便检测新期号）
+      if (isInDrawWindow) {
         if (!window._lastAutoFetchTime || (Date.now() - window._lastAutoFetchTime) >= 5000) {
           window._lastAutoFetchTime = Date.now();
           fetchLottery();
         }
+        return;
+      }
+      // 非开奖时间：每60秒刷新一次兜底（检测新期号发布）
+      if (!window._lastRegularFetchTime || (Date.now() - window._lastRegularFetchTime) >= 60000) {
+        window._lastRegularFetchTime = Date.now();
+        fetchLottery();
       }
     }, 1000);
   }
@@ -921,7 +959,7 @@
       if (DOM.drawer_close) DOM.drawer_close.addEventListener("click", () => DrawerSystem.close());
       if (DOM.drawer_overlay) DOM.drawer_overlay.addEventListener("click", () => DrawerSystem.close());
       fetchLottery(); runAnalysis(); initAutoRefresh(); initParticles();
-      window.addEventListener("beforeunload", () => terminateWorker());
+      window.addEventListener("beforeunload", () => { terminateWorker(); if (countdownTimer) clearInterval(countdownTimer); });
       console.log("%c✅ 神码再现 v3.6.3 无直播版已加载", "color:#00ffea;font-weight:bold");
     } catch (e) { console.error("初始化失败:", e); alert("页面初始化出错，请刷新重试。错误: " + e.message); }
   }
