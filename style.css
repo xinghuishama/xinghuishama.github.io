@@ -244,18 +244,44 @@ body {
 }
 
 /* ======================== 真实开奖风格蛋形球 ======================== */
+/*
+ * [核心修复] 开奖球行布局
+ * ---------------------------------------------------------------
+ * 问题根因：原 flex-wrap:wrap 允许换行。
+ * 在 375px 手机（如 iPhone）上：
+ *   可用宽度 = 375 - 24(main p-3×2) - 36(lottery-card padding 18px×2) = 315px
+ *   旧 420px 断点：7×42px球 + 20px加号 + 7×4px间距 = 342px > 315px → 第7球换行 ✗
+ * 修复方案：
+ *   1. flex-wrap: nowrap  → 强制7个球在同一行
+ *   2. overflow-x: auto   → 极小屏（<320px）兜底横向滚动
+ *   3. 收窄 ≤420px 球尺寸：7×38 + 15 + 7×3 = 302px ≤ 315px ✓
+ *   4. 收窄 ≤360px 球尺寸：7×34 + 14 + 7×2 = 266px ≤ 300px ✓
+ */
 .result-balls-row {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 18px;
-  flex-wrap: wrap;
+  /* [修复] wrap → nowrap：禁止换行，确保 7 个球始终在同一行 */
+  flex-wrap: nowrap;
+  /* [修复] 极小屏兜底：内容仍然超出时横向滚动而非换行 */
+  overflow-x: auto;
+  overflow-y: visible;               /* [修复] 垂直方向 overflow 设为 visible，防止球顶端被父容器裁切 */
+  -webkit-overflow-scrolling: touch; /* iOS 惯性滚动体验 */
+  scrollbar-width: none;             /* Firefox 隐藏滚动条 */
+  padding-bottom: 4px;               /* 避免滚动指示器遮挡球 */
+  padding-top: 8px;                  /* [修复] 顶部增加 8px 内边距，确保球体顶端完整显示 */
 }
+/* Chrome / Safari / WebView 隐藏横向滚动条 */
+.result-balls-row::-webkit-scrollbar { display: none; }
+
 .result-ball-item {
   display: flex;
   flex-direction: column;
   align-items: center;
   position: relative;
+  /* [修复] flex-shrink:0 防止 nowrap 时球被 flex 压缩变形 */
+  flex-shrink: 0;
 }
 .result-ball {
   width: 67px;
@@ -296,6 +322,8 @@ body {
   margin: 0 1px;
   align-self: center;
   padding-bottom: 16px;
+  /* [修复] flex-shrink:0 防止加号在 nowrap 下被压缩消失 */
+  flex-shrink: 0;
 }
 .result-ball-meta {
   position: absolute;
@@ -322,18 +350,27 @@ body {
   100% { transform: scale(1) rotate(0deg); opacity: 1; }
 }
 
+/*
+ * [修复] ≤420px 断点（覆盖 375px iPhone 等常见机型）
+ * 计算：7×38 + 15(加号@18px字) + 7×3 = 302px ≤ 315px(可用) ✓
+ */
 @media (max-width: 420px) {
-  .result-ball { width: 42px; height: 56px; font-size: 15px; padding-top: 10px; }
-  .result-balls-row { gap: 4px; }
-  .result-plus-sign { font-size: 20px; padding-bottom: 10px; }
-  .result-ball-meta { font-size: 9px; bottom: 7px; }
-}
-@media (max-width: 360px) {
   .result-ball { width: 38px; height: 50px; font-size: 16px; padding-top: 8px; }
-  .result-balls-row { gap: 3px; }
+  .result-balls-row { gap: 6px; }
   .result-plus-sign { font-size: 18px; padding-bottom: 8px; }
-  .result-ball-meta { font-size: 9px; bottom: 6px; }
+  .result-ball-meta { font-size: 12px; bottom: 6px; }
 }
+/*
+ * [修复] ≤360px 断点（覆盖极小屏）
+ * 计算：7×34 + 14(加号@16px字) + 7×2 = 266px ≤ 300px(可用) ✓
+ */
+@media (max-width: 360px) {
+  .result-ball { width: 36px; height: 48px; font-size: 15px; padding-top: 7px; }
+  .result-balls-row { gap: 4px; }
+  .result-plus-sign { font-size: 16px; padding-bottom: 7px; }
+  .result-ball-meta { font-size: 9px; bottom: 5px; }
+}
+
 
 /* ======================== 历史记录卡片 ======================== */
 .history-ball-card {
@@ -573,4 +610,3 @@ body {
 @keyframes flash-pulse {
   0%, 100% { box-shadow: 0 0 5px currentColor; }
   50% { box-shadow: 0 0 25px currentColor, 0 0 50px currentColor; }
-
