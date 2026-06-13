@@ -1,6 +1,24 @@
-// ======================== app.js v3.6.3 (无直播版) ========================
+// ======================== app.js v3.6.4 (无直播版) ========================
 (function () {
   "use strict";
+
+  // ========== 版本管理 ==========
+  const APP_VERSION = "3.6.4";
+  const TOAST_DURATION = 2000;
+  const DEBOUNCE_DELAY = 200;
+  const VISIBILITY_CHECK_DELAY = 300;
+  const AUTO_FETCH_INTERVAL = 5000;
+  const REGULAR_FETCH_INTERVAL = 60000;
+  const DRAW_START_SECONDS = 21 * 3600 + 33 * 60 + 22;  // 21:33:22
+  const DRAW_END_SECONDS = 21 * 3600 + 34 * 60 + 30;    // 21:34:30
+  const FETCH_TIMEOUT = 8000;
+  const FETCH_RETRIES = 2;
+  const RETRY_DELAY = 800;
+  const STATE_EXPIRY = 7 * 86400000;  // 7 days
+  const MAX_PARTICLES = 60;
+  const ANIMATION_DELAY_MS = 150;
+  const COLOR_MAP = { 红: "red", 蓝: "blue", 绿: "green" };
+  const WX_CLASS_MAP = { 金: "wx-gold", 木: "wx-wood", 水: "wx-water", 火: "wx-fire", 土: "wx-earth" };
 
   // ---------- 从 DATA 获取全局数据 ----------
   const DATA = window.APP_DATA || {};
@@ -31,11 +49,6 @@
       "drawer-overlay","drawer-container","drawer-title","drawer-content","drawer-close","toast"
     ];
     ids.forEach(id => { DOM[id.replace(/-/g, "_")] = document.getElementById(id); });
-    if (!DOM.drawer_content) DOM.drawer_content = document.getElementById("drawer-content");
-    if (!DOM.drawer_container) DOM.drawer_container = document.getElementById("drawer-container");
-    if (!DOM.drawer_overlay) DOM.drawer_overlay = document.getElementById("drawer-overlay");
-    if (!DOM.drawer_title) DOM.drawer_title = document.getElementById("drawer-title");
-    if (!DOM.drawer_close) DOM.drawer_close = document.getElementById("drawer-close");
   }
 
   // ---------- 全局状态 ----------
@@ -65,7 +78,7 @@
   function saveState() {
     try {
       localStorage.setItem(LS_KEY, JSON.stringify({ killNums: state.killNums, selectedFilters: state.selectedFilters, _t: Date.now() }));
-    } catch (e) {}
+    } catch (e) { console.warn("Failed to save state to localStorage", e); }
   }
   function loadState() {
     try {
@@ -73,7 +86,7 @@
       if (!raw) return;
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== "object") return;
-      if (parsed._t && (Date.now() - parsed._t > 7 * 86400000)) { localStorage.removeItem(LS_KEY); return; }
+      if (parsed._t && (Date.now() - parsed._t > STATE_EXPIRY)) { localStorage.removeItem(LS_KEY); return; }
       if (Array.isArray(parsed.killNums)) state.killNums = parsed.killNums.filter(n => Number.isInteger(n) && n >= 1 && n <= 49);
       if (parsed.selectedFilters && typeof parsed.selectedFilters === "object") {
         Object.keys(state.selectedFilters).forEach(k => {
@@ -101,7 +114,30 @@
       t.classList.add("translate-y-20", "opacity-0");
       t.style.transform = "translateY(5rem)";
       t.style.opacity = "0";
-    }, 2000);
+    }, TOAST_DURATION);
+  }
+
+  // 获取颜色等级类名
+  function getColorClass(color, prefix = "ball-") {
+    if (color === "red") return prefix + "red";
+    if (color === "green") return prefix + "green";
+    return prefix + "blue";
+  }
+
+  // 获取波色类名
+  function getWaveColorClass(wave, prefix = "result-ball-") {
+    if (wave === "red") return prefix + "red";
+    if (wave === "green") return prefix + "green";
+    return prefix + "blue";
+  }
+
+  // 规范化波色值
+  function normalizeWave(wave) {
+    wave = wave.trim();
+    if (wave === "红" || wave === "red") return "red";
+    if (wave === "蓝" || wave === "blue") return "blue";
+    if (wave === "绿" || wave === "green") return "green";
+    return wave;
   }
 
   // ---------- 输入解析 ----------
@@ -155,8 +191,7 @@
     if (cond.endsWith("波单") || cond.endsWith("波双")) {
       const parts = cond.split("波");
       const c = parts[0]; const oe = parts[1];
-      const colorMap = { 红: "red", 蓝: "blue", 绿: "green" };
-      return n => numProps[n] && numProps[n].color === colorMap[c] && numProps[n].odd === oe;
+      return n => numProps[n] && numProps[n].color === COLOR_MAP[c] && numProps[n].odd === oe;
     }
     if (["金","木","水","火","土"].includes(cond)) {
       return n => getFive(n, CURRENT_YEAR) === cond;
@@ -230,7 +265,7 @@
     } catch (err) { console.error("onWorkerMessage error:", err); }
   }
 
-  // ---------- 分析触发（仅此一份，移除重复）----------
+  // ---------- 分析触发 ----------
   let debounceTimer = null;
   function runAnalysis() {
     initWorker();
@@ -243,7 +278,7 @@
         if (DOM.numberWarn) {
           if (parsed.truncated) {
             DOM.numberWarn.classList.remove("hidden");
-            if (!window._truncToastShown) { showToast("⚠️ 输入号码超过" + MAX_NUMBERS + "个，已截断"); window._truncToastShown = true; setTimeout(() => window._truncToastShown = false, 2000); }
+            if (!window._truncToastShown) { showToast("⚠️ 输入号码超过" + MAX_NUMBERS + "个，已截断"); window._truncToastShown = true; setTimeout(() => window._truncToastShown = false, 3000); }
           } else { DOM.numberWarn.classList.add("hidden"); }
         }
         if (workerReady && analysisWorker) {
@@ -254,7 +289,7 @@
           renderResult(res.adjustedCount, res.adjustedTotal, res.unique, res.hitCounts, res.rawCount);
         }
       } catch (err) { console.error("runAnalysis error:", err); }
-    }, 200);
+    }, DEBOUNCE_DELAY);
   }
   function runAnalysisMainThread() {
     try {
@@ -285,13 +320,33 @@
     
     var disk = document.createElement("div");
     disk.className = "accretion-disk";
-    disk.style.cssText = "position:fixed;left:" + centerX + "px;top:" + centerY + "px;width:0;height:0;pointer-events:none;z-index:9998;transform:translate(-50%,-50%);";
+    Object.assign(disk.style, {
+      position: "fixed",
+      left: centerX + "px",
+      top: centerY + "px",
+      width: "0",
+      height: "0",
+      pointerEvents: "none",
+      zIndex: "9998",
+      transform: "translate(-50%,-50%)"
+    });
     document.body.appendChild(disk);
     
     for (var i = 0; i < 4; i++) {
       (function(idx) {
         var ring = document.createElement("div");
-        ring.style.cssText = "position:absolute;left:50%;top:50%;width:0;height:0;border:2px solid " + color + ";border-radius:50%;transform:translate(-50%,-50%);opacity:0.6;border-top-color:transparent;border-bottom-color:transparent;";
+        Object.assign(ring.style, {
+          position: "absolute",
+          left: "50%",
+          top: "50%",
+          width: "0",
+          height: "0",
+          border: "2px solid " + color,
+          borderRadius: "50%",
+          transform: "translate(-50%,-50%)",
+          opacity: "0.6",
+          borderTopColor: "transparent"
+        });
         disk.appendChild(ring);
         var anim = ring.animate([
           { width: '0px', height: '0px', transform: 'translate(-50%,-50%) rotate(0deg)', opacity: 0 },
@@ -304,7 +359,17 @@
     
     var blackhole = document.createElement("div");
     blackhole.className = "blackhole";
-    blackhole.style.cssText = "position:fixed;left:" + centerX + "px;top:" + centerY + "px;width:0;height:0;background:radial-gradient(circle,#000 20%," + darkColor + " 50%," + color + " 70%,transparent 100%);border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:9999;box-shadow:0 0 60px " + color + ", inset 0 0 40px " + color + ";";
+    Object.assign(blackhole.style, {
+      position: "fixed",
+      left: centerX + "px",
+      top: centerY + "px",
+      width: "0",
+      height: "0",
+      background: "radial-gradient(circle,#000 20%," + darkColor + " 50%," + color + " 70%,transparent)",
+      pointerEvents: "none",
+      zIndex: "9999",
+      transform: "translate(-50%,-50%)"
+    });
     document.body.appendChild(blackhole);
     
     var bhAnim = blackhole.animate([
@@ -319,7 +384,13 @@
     var ball = document.createElement("div");
     ball.className = "flying-unique-ball " + colorClass;
     ball.textContent = String(targetNum).padStart(2, "0");
-    ball.style.cssText = "position:fixed;left:" + endX + "px;top:" + endY + "px;transform:translate(-50%,-50%) scale(1);z-index:10000;";
+    Object.assign(ball.style, {
+      position: "fixed",
+      left: endX + "px",
+      top: endY + "px",
+      transform: "translate(-50%,-50%) scale(1)",
+      zIndex: "10000"
+    });
     document.body.appendChild(ball);
     
     var startTime = performance.now();
@@ -337,7 +408,18 @@
       if (progress < 1 && Math.random() > 0.5) {
         var trail = document.createElement("div");
         trail.className = "particle-stream";
-        trail.style.cssText = "position:fixed;left:" + currentX + "px;top:" + currentY + "px;width:4px;height:4px;background:" + color + ";border-radius:50%;pointer-events:none;z-index:9997;opacity:0.6;";
+        Object.assign(trail.style, {
+          position: "fixed",
+          left: currentX + "px",
+          top: currentY + "px",
+          width: "4px",
+          height: "4px",
+          background: color,
+          borderRadius: "50%",
+          pointerEvents: "none",
+          zIndex: "9997",
+          opacity: "0.6"
+        });
         document.body.appendChild(trail);
         trail.animate([
           { transform: 'translate(-50%,-50%) scale(1)', opacity: 0.6 },
@@ -370,7 +452,18 @@
       ball.style.opacity = Math.min(1, ease * 2);
       if (progress < 0.5 && Math.random() > 0.5) {
         var jet = document.createElement("div");
-        jet.style.cssText = "position:fixed;left:" + currentX + "px;top:" + currentY + "px;width:3px;height:3px;background:" + color + ";border-radius:50%;pointer-events:none;z-index:9997;box-shadow:0 0 6px " + color + ";";
+        Object.assign(jet.style, {
+          position: "fixed",
+          left: currentX + "px",
+          top: currentY + "px",
+          width: "3px",
+          height: "3px",
+          background: color,
+          borderRadius: "50%",
+          pointerEvents: "none",
+          zIndex: "9997",
+          boxShadow: "0 0 4px " + color
+        });
         document.body.appendChild(jet);
         var jetAngle = Math.random() * Math.PI * 2;
         var jetDist = 30 + Math.random() * 50;
@@ -426,7 +519,7 @@
           const hit = hitCounts[n] || 0;
           const isGray = (hit > 0);
           const color = numProps[n] ? numProps[n].color : getBallColor(n);
-          let baseColorClass = isGray ? "ball-gray" : (color === "red" ? "ball-red" : (color === "green" ? "ball-green" : "ball-blue"));
+          let baseColorClass = isGray ? "ball-gray" : getColorClass(color);
           const isTarget = (n === uniqueUnhitNum);
           const flashClass = isTarget ? "flash-unique" : "";
           let markHtml = "";
@@ -447,14 +540,14 @@
           htmlParts.push('<div class="flex items-start gap-2 mb-2 flex-wrap"><span class="text-xs text-gray-500 font-mono min-w-[30px] pt-2">0次：</span><div class="flex flex-wrap gap-1.5 flex-1">');
           zeroCountNumbers.forEach(n => {
             const color = numProps[n] ? numProps[n].color : getBallColor(n);
-            const colorClass = color === "red" ? "ball-red" : (color === "green" ? "ball-green" : "ball-blue");
+            const colorClass = getColorClass(color);
             htmlParts.push(`<button class="ball-3d ${colorClass}" data-num="${n}">${String(n).padStart(2, "0")}</button>`);
           });
           htmlParts.push("</div></div>");
         }
       }
 
-      htmlParts.push(`<div class="mt-4 grid grid-cols-3 gap-2 p-3 bg-transparent rounded-lg border border-[#00ffea]/20"><div class="text-center"><div class="text-[#00ffea] font-bold text-lg">${unique}</div><div class="text-xs text-gray-500">有效数字个数</div></div><div class="text-center"><div class="text-[#00ffea] font-bold text-lg">${adjustedTotal}</div><div class="text-xs text-gray-500">调整后总次数</div></div><div class="text-center"><div class="text-[#00ffea] font-bold text-lg">${avg}</div><div class="text-xs text-gray-500">调整后平均次数</div></div></div>`);
+      htmlParts.push(`<div class="mt-4 grid grid-cols-3 gap-2 p-3 bg-transparent rounded-lg border border-[#00ffea]/20"><div class="text-center"><div class="text-[#00ffea] font-bold text-lg">${unique}</div><div class="text-xs text-gray-400">不同号</div></div><div class="text-center"><div class="text-[#00ffea] font-bold text-lg">${adjustedTotal}</div><div class="text-xs text-gray-400">总频次</div></div><div class="text-center"><div class="text-[#00ffea] font-bold text-lg">${avg}</div><div class="text-xs text-gray-400">平均值</div></div></div>`);
       container.innerHTML = htmlParts.join("");
 
       if (uniqueUnhitNum) {
@@ -462,7 +555,7 @@
         if (lastUniqueNum !== uniqueUnhitNum) {
           lastUniqueNum = uniqueUnhitNum;
           const flyColor = numProps[uniqueUnhitNum] ? numProps[uniqueUnhitNum].color : getBallColor(uniqueUnhitNum);
-          const flyColorClass = flyColor === "red" ? "ball-red" : (flyColor === "green" ? "ball-green" : "ball-blue");
+          const flyColorClass = getColorClass(flyColor);
           setTimeout(() => launchUniqueFlyEffect(uniqueUnhitNum, flyColorClass), 100);
         }
       } else { lastUniqueNum = null; }
@@ -518,26 +611,26 @@
     const s = Math.floor((diff % 60000) / 1000);
     DOM.lotteryTime.textContent = "距开奖 " + String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
   }
-  async function safeFetch(url, options = {}, retries = 2) {
+  async function safeFetch(url, options = {}, retries = FETCH_RETRIES) {
     for (let i = 0; i <= retries; i++) {
       try {
         let res;
         if (typeof AbortController !== "undefined") {
           const ctrl = new AbortController();
-          const tid = setTimeout(() => ctrl.abort(), options.timeout || 8000);
+          const tid = setTimeout(() => ctrl.abort(), options.timeout || FETCH_TIMEOUT);
           res = await fetch(url, { ...options, signal: ctrl.signal });
           clearTimeout(tid);
         } else {
           res = await Promise.race([
             fetch(url, options),
-            new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), options.timeout || 8000))
+            new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), options.timeout || FETCH_TIMEOUT))
           ]);
         }
         if (!res.ok) throw new Error("HTTP " + res.status);
         return res;
       } catch (e) {
         if (i === retries) throw e;
-        await new Promise(r => setTimeout(r, 800));
+        await new Promise(r => setTimeout(r, RETRY_DELAY));
       }
     }
   }
@@ -546,14 +639,14 @@
     isFetchingLottery = true;
     const btn = DOM.refreshLotteryBtn;
     const origHtml = btn ? btn.innerHTML : "";
-    if (btn) { btn.innerHTML = '<svg class="animate-spin w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>加载中...'; btn.disabled = true; }
+    if (btn) { btn.innerHTML = '<svg class="animate-spin w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>'; }
     try {
       const res = await safeFetch(API_CONFIG.live + "?_t=" + Date.now());
       const data = await res.json();
       if (!Array.isArray(data) || !data[0]) { showToast("暂无开奖数据"); return; }
       const item = data[0];
       if (!item.openCode || typeof item.openCode !== "string" || !item.wave) { showToast("数据字段不完整"); return; }
-      try { localStorage.setItem(LS_CACHE_KEY, JSON.stringify({ data, time: Date.now() })); } catch (e) {}
+      try { localStorage.setItem(LS_CACHE_KEY, JSON.stringify({ data, time: Date.now() })); } catch (e) { console.warn("Failed to cache lottery data", e); }
       const isNewPeriod = lastLotteryPeriod !== item.expect;
       if (isNewPeriod) { lastLotteryPeriod = item.expect; isCurrentDrawComplete = false; }
       renderLottery(item);
@@ -574,7 +667,7 @@
           const cache = JSON.parse(cacheRaw);
           if (cache.data && cache.data[0]) { renderLottery(cache.data[0]); showToast("离线模式：显示缓存数据"); return; }
         }
-      } catch (cacheErr) {}
+      } catch (cacheErr) { console.warn("Failed to load cache", cacheErr); }
       showToast("获取开奖失败");
     } finally {
       isFetchingLottery = false;
@@ -584,13 +677,7 @@
 
   function renderLottery(item) {
     const codes = String(item.openCode || "").split(",").map(c => escapeHtml(c.trim()));
-    const waves = String(item.wave || "").split(",").map(w => {
-      w = w.trim();
-      if (w === "红" || w === "red") return "red";
-      if (w === "蓝" || w === "blue") return "blue";
-      if (w === "绿" || w === "green") return "green";
-      return w;
-    });
+    const waves = String(item.wave || "").split(",").map(normalizeWave);
     const zodiacs = codes.map(c => {
       const n = parseInt(c, 10);
       if (isNaN(n) || n < 1 || n > 49) return "";
@@ -602,16 +689,14 @@
     container.className = "result-balls-row";
     container.innerHTML = "";
 
-    const wxClassMap = { 金: "wx-gold", 木: "wx-wood", 水: "wx-water", 火: "wx-fire", 土: "wx-earth" };
-
     for (let i = 0; i < 6 && i < codes.length; i++) {
       const num = parseInt(codes[i], 10);
-      const colorClass = waves[i] === "red" ? "result-ball-red" : (waves[i] === "green" ? "result-ball-green" : "result-ball-blue");
+      const colorClass = getWaveColorClass(waves[i]);
       const wx = (num >= 1 && num <= 49) ? (numProps[num]?.five || "?") : "?";
-      const wxCls = wxClassMap[wx] || "";
+      const wxCls = WX_CLASS_MAP[wx] || "";
       const div = document.createElement("div");
       div.className = "result-ball-item";
-      div.innerHTML = `<div class="result-ball ${colorClass}" style="animation-delay: ${i * 150}ms">${escapeHtml(codes[i].padStart(2, "0"))}<div class="result-ball-meta">${escapeHtml(zodiacs[i])}/<span class="${wxCls}">${wx}</span></div></div>`;
+      div.innerHTML = `<div class="result-ball ${colorClass}" style="animation-delay: ${i * ANIMATION_DELAY_MS}ms">${escapeHtml(codes[i].padStart(2, "0"))}<div class="result-ball-meta">${escapeHtml(zodiacs[i])}/${wxCls}</div></div>`;
       container.appendChild(div);
     }
     if (codes.length >= 7) {
@@ -620,12 +705,12 @@
       plus.textContent = "+";
       container.appendChild(plus);
       const num = parseInt(codes[6], 10);
-      const colorClass = waves[6] === "red" ? "result-ball-red" : (waves[6] === "green" ? "result-ball-green" : "result-ball-blue");
+      const colorClass = getWaveColorClass(waves[6]);
       const wx = (num >= 1 && num <= 49) ? (numProps[num]?.five || "?") : "?";
-      const wxCls = wxClassMap[wx] || "";
+      const wxCls = WX_CLASS_MAP[wx] || "";
       const div = document.createElement("div");
       div.className = "result-ball-item";
-      div.innerHTML = `<div class="result-ball ${colorClass}" style="animation-delay: ${6 * 150}ms">${escapeHtml(codes[6].padStart(2, "0"))}<div class="result-ball-meta">${escapeHtml(zodiacs[6])}/<span class="${wxCls}">${wx}</span></div></div>`;
+      div.innerHTML = `<div class="result-ball ${colorClass}" style="animation-delay: ${6 * ANIMATION_DELAY_MS}ms">${escapeHtml(codes[6].padStart(2, "0"))}<div class="result-ball-meta">${escapeHtml(zodiacs[6])}/${wxCls}</div></div>`;
       container.appendChild(div);
     }
     void container.offsetHeight;
@@ -640,9 +725,9 @@
     year = year || CURRENT_YEAR;
     let html = "";
     codes.forEach((code, i) => {
-      const wave = waves[i];
+      const wave = normalizeWave(waves[i]);
       const zodiac = zodiacs[i];
-      const cc = wave === "blue" || wave === "蓝" ? "history-ball-blue" : wave === "green" || wave === "绿" ? "history-ball-green" : "history-ball-red";
+      const cc = wave === "blue" ? "history-ball-blue" : wave === "green" ? "history-ball-green" : "history-ball-red";
       const num = parseInt(code, 10);
       const five = (num >= 1 && num <= 49) ? getFive(num, year) : "";
       html += `<div class="history-ball-card ${cc}"><div class="history-ball-number">${escapeHtml(code)}</div><div class="history-ball-tag">${escapeHtml(zodiac || "")}/${escapeHtml(five)}</div></div>`;
@@ -721,44 +806,44 @@
       shengxiao: () => {
         const sxs = ["鼠","牛","虎","兔","龙","蛇","马","羊","猴","鸡","狗","猪"];
         const sel = state.selectedFilters.shengxiao;
-        return '<div class="dgrid-6">' + sxs.map(sx => `<label><input type="checkbox" class="filter-checkbox hidden" value="生肖${sx}" data-drawer="shengxiao" ${sel.includes("生肖"+sx)?"checked":""}><span class="filter-label dbtn">${sx}</span></label>`).join("") + "</div>";
+        return '<div class="dgrid-6">' + sxs.map(sx => `<label><input type="checkbox" class="filter-checkbox hidden" value="生肖${sx}" data-drawer="shengxiao" ${sel.includes("生肖"+sx)?"checked":""}><span class="filter-label">${sx}</span></label>`).join("") + '</div>';
       },
       haomatou: () => {
         const heads = [["0头单","1头单","2头单","3头单","4头单"],["0头双","1头双","2头双","3头双","4头双"]];
         const sel = state.selectedFilters.haomatou;
-        return heads.map(row => '<div class="dflex">' + row.map(h => `<label class="dflex-1"><input type="checkbox" class="filter-checkbox hidden" value="${h}" data-drawer="haomatou" ${sel.includes(h)?"checked":""}><span class="filter-label dbtn dbtn-sm">${h}</span></label>`).join("") + "</div>").join("");
+        return heads.map(row => '<div class="dflex">' + row.map(h => `<label class="dflex-1"><input type="checkbox" class="filter-checkbox hidden" value="${h}" data-drawer="haomatou" ${sel.includes(h)?"checked":""}><span class="filter-label">${h}</span></label>`).join("") + '</div>').join("");
       },
       weishu: () => {
         const tails = [["0尾","1尾","2尾","3尾","4尾"],["5尾","6尾","7尾","8尾","9尾"]];
         const sel = state.selectedFilters.weishu;
-        return tails.map(row => '<div class="dflex">' + row.map(t => `<label class="dflex-1"><input type="checkbox" class="filter-checkbox hidden" value="${t}" data-drawer="weishu" ${sel.includes(t)?"checked":""}><span class="filter-label dbtn dbtn-sm">${t}</span></label>`).join("") + "</div>").join("");
+        return tails.map(row => '<div class="dflex">' + row.map(t => `<label class="dflex-1"><input type="checkbox" class="filter-checkbox hidden" value="${t}" data-drawer="weishu" ${sel.includes(t)?"checked":""}><span class="filter-label">${t}</span></label>`).join("") + '</div>').join("");
       },
       shuduan: () => {
         const duans = ["1段","2段","3段","4段","5段","6段","7段"];
         const sel = state.selectedFilters.shuduan;
-        return '<div class="dflex-wrap">' + duans.map(d => `<label><input type="checkbox" class="filter-checkbox hidden" value="${d}" data-drawer="shuduan" ${sel.includes(d)?"checked":""}><span class="filter-label dbtn dbtn-md">${d}</span></label>`).join("") + "</div>";
+        return '<div class="dflex-wrap">' + duans.map(d => `<label><input type="checkbox" class="filter-checkbox hidden" value="${d}" data-drawer="shuduan" ${sel.includes(d)?"checked":""}><span class="filter-label">${d}</span></label>`).join("") + '</div>';
       },
       bose: () => {
         const items = [["红波单","蓝波单","绿波单"],["红波双","蓝波双","绿波双"]];
         const sel = state.selectedFilters.bose;
-        return items.map(row => '<div class="dflex">' + row.map(item => `<label class="dflex-1"><input type="checkbox" class="filter-checkbox hidden" value="${item}" data-drawer="bose" ${sel.includes(item)?"checked":""}><span class="filter-label dbtn dbtn-sm">${item.replace("波","")}</span></label>`).join("") + "</div>").join("");
+        return items.map(row => '<div class="dflex">' + row.map(item => `<label class="dflex-1"><input type="checkbox" class="filter-checkbox hidden" value="${item}" data-drawer="bose" ${sel.includes(item)?"checked":""}><span class="filter-label">${item}</span></label>`).join("") + '</div>').join("");
       },
       wuxing: () => {
         const table = generateWuxingTable(CURRENT_YEAR);
         const wx = {};
         for (const [k,v] of Object.entries(table)) wx[k] = v.map(n => String(n).padStart(2,'0')).join(' ');
         const sel = state.selectedFilters.wuxing;
-        return '<div class="dspace-y">' + Object.entries(wx).map(([k,v]) => `<div class="wuxing-row"><label class="ditems-center" style="gap:8px;min-width:0;flex-shrink:0;"><input type="checkbox" class="filter-checkbox hidden" value="${k}" data-drawer="wuxing" ${sel.includes(k)?"checked":""}><span class="filter-label dbtn dbtn-fixed wuxing-btn-fixed">${k}</span></label><span class="wuxing-nums">${v}</span></div>`).join("") + "</div>";
+        return '<div class="dspace-y">' + Object.entries(wx).map(([k,v]) => `<div class="wuxing-row"><label class="ditems-center" style="gap:8px;min-width:0;flex-shrink:0;"><input type="checkbox" class="filter-checkbox hidden" value="${k}" data-drawer="wuxing" ${sel.includes(k)?"checked":""}><span class="filter-label">${k}</span></label><span class="dtext-xs dtext-gray-400" style="white-space:nowrap;">${escapeHtml(v)}</span></div>`).join("") + '</div>';
       },
       bandanshuang: () => {
         const items = [["合数单","小单","大单"],["合数双","小双","大双"]];
         const sel = state.selectedFilters.bandanshuang;
-        return items.map(row => '<div class="dflex">' + row.map(item => `<label class="dflex-1"><input type="checkbox" class="filter-checkbox hidden" value="${item}" data-drawer="bandanshuang" ${sel.includes(item)?"checked":""}><span class="filter-label dbtn dbtn-sm">${item}</span></label>`).join("") + "</div>").join("");
+        return items.map(row => '<div class="dflex">' + row.map(item => `<label class="dflex-1"><input type="checkbox" class="filter-checkbox hidden" value="${item}" data-drawer="bandanshuang" ${sel.includes(item)?"checked":""}><span class="filter-label">${item}</span></label>`).join("") + '</div>').join("");
       },
       heshu: () => {
         const hes = Array.from({ length: 13 }, (_, i) => (i + 1) + "合");
         const sel = state.selectedFilters.heshu;
-        return '<div class="dgrid-4">' + hes.map(h => `<label><input type="checkbox" class="filter-checkbox hidden" value="${h}" data-drawer="heshu" ${sel.includes(h)?"checked":""}><span class="filter-label dbtn dbtn-sm">${h}</span></label>`).join("") + "</div>";
+        return '<div class="dgrid-4">' + hes.map(h => `<label><input type="checkbox" class="filter-checkbox hidden" value="${h}" data-drawer="heshu" ${sel.includes(h)?"checked":""}><span class="filter-label">${h}</span></label>`).join("") + '</div>';
       },
       history: () => {
         let opts = "";
@@ -770,7 +855,7 @@
             '<div id="historyContent" class="dmt-3 hide-scrollbar"></div>',
             '<div id="historyPagination" class="dflex-between dmt-6 dpx-1 dhidden">',
               '<button id="history-prev" class="dpage-btn">← 上1页</button>',
-              '<div class="dtext-sm" style="text-align:center;">第 <span id="historyPageNum" style="font-weight:bold;color:#00ffea;">1</span> 页 / <span id="historyTotalPages" class="dtext-gray">1</span> 页</div>',
+              '<div class="dtext-sm" style="text-align:center;">第 <span id="historyPageNum" style="font-weight:bold;color:#00ffea;">1</span> 页 / <span id="historyTotalPages" class="dtext-gray">1</span></div>',
               '<button id="history-next" class="dpage-btn">下1页 →</button>',
             '</div>',
           '</div>'
@@ -780,7 +865,7 @@
     open(type) {
       if (this.current === type) { this.close(); return; }
       this.current = type;
-      const titles = { shama: "杀码", shengxiao: "生肖", haomatou: "头数", weishu: "尾数", shuduan: "数段", bose: "波色", wuxing: "五行", bandanshuang: "半单双", heshu: "合数", history: "历史开奖" };
+      const titles = { shama: "杀码", shengxiao: "生肖", haomatou: "头数", weishu: "尾数", shuduan: "数段", bose: "波色", wuxing: "五行", bandanshuang: "半单双", heshu: "合数", history: "历史" };
       DOM.drawer_title.textContent = titles[type] || "筛选器";
       const contentDiv = DOM.drawer_content;
       if (!contentDiv) { showToast("抽屉初始化失败"); return; }
@@ -790,7 +875,7 @@
       setTimeout(() => { DOM.drawer_overlay.classList.remove("opacity-0"); DOM.drawer_overlay.style.opacity = "1"; }, 10);
       DOM.drawer_container.classList.add("open");
       this.updateNavState(type);
-      if (type === "history") setTimeout(() => { const sel = document.getElementById("historyYear"); if (sel && !sel.value) sel.value = historyYearLoaded || ""; if (sel) sel.dispatchEvent(new Event("change")); }, 50);
+      if (type === "history") setTimeout(() => { const sel = document.getElementById("historyYear"); if (sel && !sel.value) sel.value = historyYearLoaded || ""; if (sel) sel.dispatchEvent(new Event("change")); }, 100);
     },
     close() {
       DOM.drawer_container.classList.remove("open");
@@ -827,7 +912,7 @@
                 else currentHistoryData = [];
               }
               currentHistorySorted = []; currentHistoryPage = 1; renderHistoryPage();
-            } catch (e) { currentHistoryData = []; if (cont) cont.innerHTML = '<div style="color:#f87171;">加载失败</div>'; }
+            } catch (e) { console.error("History load error:", e); currentHistoryData = []; if (cont) cont.innerHTML = '<div style="color:#f87171;">加载失败</div>'; }
             finally { if (loadDiv) loadDiv.classList.add("dhidden"); }
           })();
         }
@@ -879,13 +964,11 @@
     updateCountdown();
     countdownTimer = setInterval(updateCountdown, 1000);
     
-    /* ========== 新增：切回前台立即补刷 ========== */
     document.addEventListener('visibilitychange', function() {
       if (document.visibilityState === 'visible') {
-        // 延迟300ms确保WebView从冻结恢复后再请求
         setTimeout(function() {
           fetchLottery();
-        }, 300);
+        }, VISIBILITY_CHECK_DELAY);
       }
     });
     
@@ -893,23 +976,17 @@
       if (isFetchingLottery || document.visibilityState !== "visible") return;
       const now = new Date();
       const totalSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
-      
-      const DRAW_START = 21 * 3600 + 33 * 60 + 22;  // 21:33:22（开奖前8秒）
-      const DRAW_END   = 21 * 3600 + 34 * 60 + 30;  // 21:34:30（开奖完成+5秒余量）
-      
-      /* ========== 修复：高频窗口内始终刷新，无视 isCurrentDrawComplete ========== */
-      const isInDrawWindow = totalSec >= DRAW_START && totalSec <= DRAW_END;
+      const isInDrawWindow = totalSec >= DRAW_START_SECONDS && totalSec <= DRAW_END_SECONDS;
       
       if (isInDrawWindow) {
-        if (!window._lastAutoFetchTime || (Date.now() - window._lastAutoFetchTime) >= 5000) {
+        if (!window._lastAutoFetchTime || (Date.now() - window._lastAutoFetchTime) >= AUTO_FETCH_INTERVAL) {
           window._lastAutoFetchTime = Date.now();
           fetchLottery();
         }
         return;
       }
       
-      // 常规刷新
-      if (!window._lastRegularFetchTime || (Date.now() - window._lastRegularFetchTime) >= 60000) {
+      if (!window._lastRegularFetchTime || (Date.now() - window._lastRegularFetchTime) >= REGULAR_FETCH_INTERVAL) {
         window._lastRegularFetchTime = Date.now();
         fetchLottery();
       }
@@ -922,13 +999,12 @@
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     let width, height, particles = [], frameId = null, lastTime = 0;
-    const MAX_PARTICLES = 60;
     function resize() { width = window.innerWidth; height = window.innerHeight; canvas.width = width; canvas.height = height; }
     function createParticle(yOverride) {
       const speedY = (Math.random() * 50 + 20);
       const speedX = (Math.random() - 0.5) * 24;
       const y = yOverride !== undefined ? yOverride : height + Math.random() * 30;
-      return { x: Math.random() * width, y: y, r: Math.random() * 2.5 + 0.8, speedY: speedY, speedX: speedX, alpha: Math.random() * 0.4 + 0.15, hue: Math.random() * 360, wobble: Math.random() * Math.PI * 2, wobbleSpeed: (Math.random() * 1.0 + 0.3) };
+      return { x: Math.random() * width, y: y, r: Math.random() * 2.5 + 0.8, speedY: speedY, speedX: speedX, alpha: Math.random() * 0.4 + 0.15, hue: Math.random() * 360, wobble: Math.random() * Math.PI, wobbleSpeed: Math.random() * 0.03 + 0.01 };
     }
     function initDots() { particles = []; for (let i = 0; i < MAX_PARTICLES; i++) particles.push(createParticle(Math.random() * height)); }
     function animate(timestamp) {
@@ -973,7 +1049,7 @@
       if (DOM.drawer_overlay) DOM.drawer_overlay.addEventListener("click", () => DrawerSystem.close());
       fetchLottery(); runAnalysis(); initAutoRefresh(); initParticles();
       window.addEventListener("beforeunload", () => { terminateWorker(); if (countdownTimer) clearInterval(countdownTimer); });
-      console.log("%c✅ 神码再现 v3.6.6 无直播版已加载", "color:#00ffea;font-weight:bold");
+      console.log("%c✅ 神码��现 v" + APP_VERSION + " 无直播版已加载", "color:#00ffea;font-weight:bold");
     } catch (e) { console.error("初始化失败:", e); alert("页面初始化出错，请刷新重试。错误: " + e.message); }
   }
 
