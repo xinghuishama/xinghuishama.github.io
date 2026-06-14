@@ -823,7 +823,7 @@
   const DrawerSystem = {
     current: null,
     // 内联样式后备常量
-    inlineLabelStyle: 'display:inline-block; padding:6px 12px; background:rgba(255,255,255,0.1); border:1px solid rgba(0,255,234,0.3); border-radius:24px; color:#ccc; font-size:13px; cursor:pointer; transition:all 0.2s; text-align:center; user-select:none;',
+    inlineLabelStyle: 'display:inline-block; padding:6px 12px; background:rgba(255,255,255,0.1); border:1px solid rgba(0,255,234,0.3); border-radius:4px; color:#ccc; font-size:13px; cursor:pointer; transition:all 0.2s; text-align:center; user-select:none;',
     inlineCheckedStyle: 'background:#00ffea; color:#000; border-color:#00ffea; box-shadow:0 0 6px #00ffea;',
     templates: {
       shama: () => `<textarea id="kill-input" rows="3" class="dinput" style="background:#1e1e2f; border:1px solid #3f3f6f; border-radius:12px; padding:10px; width:100%; color:#fff;">${state.killNums.join(" ")}</textarea>`,
