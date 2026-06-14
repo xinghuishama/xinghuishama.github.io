@@ -1,24 +1,6 @@
-// ======================== app.js v3.6.6 (修复样式与示例按钮) ========================
+// ======================== app.js v3.6.3 (无直播版) ========================
 (function () {
   "use strict";
-
-  // ========== 版本管理 ==========
-  const APP_VERSION = "3.6.6";
-  const TOAST_DURATION = 2000;
-  const DEBOUNCE_DELAY = 200;
-  const VISIBILITY_CHECK_DELAY = 300;
-  const AUTO_FETCH_INTERVAL = 5000;
-  const REGULAR_FETCH_INTERVAL = 60000;
-  const DRAW_START_SECONDS = 21 * 3600 + 33 * 60 + 22;  // 21:33:22
-  const DRAW_END_SECONDS = 21 * 3600 + 34 * 60 + 30;    // 21:34:30
-  const FETCH_TIMEOUT = 8000;
-  const FETCH_RETRIES = 2;
-  const RETRY_DELAY = 800;
-  const STATE_EXPIRY = 7 * 86400000;  // 7 days
-  const MAX_PARTICLES = 60;
-  const ANIMATION_DELAY_MS = 150;
-  const COLOR_MAP = { 红: "red", 蓝: "blue", 绿: "green" };
-  const WX_CLASS_MAP = { 金: "wx-gold", 木: "wx-wood", 水: "wx-water", 火: "wx-fire", 土: "wx-earth" };
 
   // ---------- 从 DATA 获取全局数据 ----------
   const DATA = window.APP_DATA || {};
@@ -49,6 +31,11 @@
       "drawer-overlay","drawer-container","drawer-title","drawer-content","drawer-close","toast"
     ];
     ids.forEach(id => { DOM[id.replace(/-/g, "_")] = document.getElementById(id); });
+    if (!DOM.drawer_content) DOM.drawer_content = document.getElementById("drawer-content");
+    if (!DOM.drawer_container) DOM.drawer_container = document.getElementById("drawer-container");
+    if (!DOM.drawer_overlay) DOM.drawer_overlay = document.getElementById("drawer-overlay");
+    if (!DOM.drawer_title) DOM.drawer_title = document.getElementById("drawer-title");
+    if (!DOM.drawer_close) DOM.drawer_close = document.getElementById("drawer-close");
   }
 
   // ---------- 全局状态 ----------
@@ -78,7 +65,7 @@
   function saveState() {
     try {
       localStorage.setItem(LS_KEY, JSON.stringify({ killNums: state.killNums, selectedFilters: state.selectedFilters, _t: Date.now() }));
-    } catch (e) { console.warn("Failed to save state to localStorage", e); }
+    } catch (e) {}
   }
   function loadState() {
     try {
@@ -86,7 +73,7 @@
       if (!raw) return;
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== "object") return;
-      if (parsed._t && (Date.now() - parsed._t > STATE_EXPIRY)) { localStorage.removeItem(LS_KEY); return; }
+      if (parsed._t && (Date.now() - parsed._t > 7 * 86400000)) { localStorage.removeItem(LS_KEY); return; }
       if (Array.isArray(parsed.killNums)) state.killNums = parsed.killNums.filter(n => Number.isInteger(n) && n >= 1 && n <= 49);
       if (parsed.selectedFilters && typeof parsed.selectedFilters === "object") {
         Object.keys(state.selectedFilters).forEach(k => {
@@ -114,53 +101,7 @@
       t.classList.add("translate-y-20", "opacity-0");
       t.style.transform = "translateY(5rem)";
       t.style.opacity = "0";
-    }, TOAST_DURATION);
-  }
-
-  // 获取颜色等级类名
-  function getColorClass(color, prefix = "ball-") {
-    if (color === "red") return prefix + "red";
-    if (color === "green") return prefix + "green";
-    return prefix + "blue";
-  }
-
-  // 获取波色类名（基于实际波色）
-  function getWaveColorClass(wave, prefix = "result-ball-") {
-    if (wave === "red") return prefix + "red";
-    if (wave === "green") return prefix + "green";
-    return prefix + "blue";
-  }
-
-  // 规范化波色值（保留，但不再依赖 API）
-  function normalizeWave(wave) {
-    wave = wave.trim();
-    if (wave === "红" || wave === "red") return "red";
-    if (wave === "蓝" || wave === "blue") return "blue";
-    if (wave === "绿" || wave === "green") return "green";
-    return wave;
-  }
-
-  // 获取号码实际波色（优先使用 numProps，否则用预定义集合）
-  function getNumberWave(num) {
-    if (numProps[num] && numProps[num].color) return numProps[num].color;
-    if (RED_SET.has(num)) return "red";
-    if (BLUE_SET.has(num)) return "blue";
-    return "green";
-  }
-
-  // 获取号码五行（优先使用 numProps，否则使用 getFive 函数）
-  function getNumberWuxing(num, year) {
-    if (numProps[num] && numProps[num].five) return numProps[num].five;
-    return getFive(num, year);
-  }
-
-  // 获取号码生肖（优先使用 numProps，否则从 SHENGXIAO 反向查找）
-  function getNumberZodiac(num) {
-    if (numProps[num] && numProps[num].shengXiao) return numProps[num].shengXiao;
-    for (const [sx, nums] of Object.entries(SHENGXIAO)) {
-      if (nums.includes(num)) return sx;
-    }
-    return "";
+    }, 2000);
   }
 
   // ---------- 输入解析 ----------
@@ -214,7 +155,8 @@
     if (cond.endsWith("波单") || cond.endsWith("波双")) {
       const parts = cond.split("波");
       const c = parts[0]; const oe = parts[1];
-      return n => numProps[n] && numProps[n].color === COLOR_MAP[c] && numProps[n].odd === oe;
+      const colorMap = { 红: "red", 蓝: "blue", 绿: "green" };
+      return n => numProps[n] && numProps[n].color === colorMap[c] && numProps[n].odd === oe;
     }
     if (["金","木","水","火","土"].includes(cond)) {
       return n => getFive(n, CURRENT_YEAR) === cond;
@@ -288,7 +230,7 @@
     } catch (err) { console.error("onWorkerMessage error:", err); }
   }
 
-  // ---------- 分析触发 ----------
+  // ---------- 分析触发（仅此一份，移除重复）----------
   let debounceTimer = null;
   function runAnalysis() {
     initWorker();
@@ -301,7 +243,7 @@
         if (DOM.numberWarn) {
           if (parsed.truncated) {
             DOM.numberWarn.classList.remove("hidden");
-            if (!window._truncToastShown) { showToast("⚠️ 输入号码超过" + MAX_NUMBERS + "个，已截断"); window._truncToastShown = true; setTimeout(() => window._truncToastShown = false, 3000); }
+            if (!window._truncToastShown) { showToast("⚠️ 输入号码超过" + MAX_NUMBERS + "个，已截断"); window._truncToastShown = true; setTimeout(() => window._truncToastShown = false, 2000); }
           } else { DOM.numberWarn.classList.add("hidden"); }
         }
         if (workerReady && analysisWorker) {
@@ -312,7 +254,7 @@
           renderResult(res.adjustedCount, res.adjustedTotal, res.unique, res.hitCounts, res.rawCount);
         }
       } catch (err) { console.error("runAnalysis error:", err); }
-    }, DEBOUNCE_DELAY);
+    }, 200);
   }
   function runAnalysisMainThread() {
     try {
@@ -343,33 +285,13 @@
     
     var disk = document.createElement("div");
     disk.className = "accretion-disk";
-    Object.assign(disk.style, {
-      position: "fixed",
-      left: centerX + "px",
-      top: centerY + "px",
-      width: "0",
-      height: "0",
-      pointerEvents: "none",
-      zIndex: "9998",
-      transform: "translate(-50%,-50%)"
-    });
+    disk.style.cssText = "position:fixed;left:" + centerX + "px;top:" + centerY + "px;width:0;height:0;pointer-events:none;z-index:9998;transform:translate(-50%,-50%);";
     document.body.appendChild(disk);
     
     for (var i = 0; i < 4; i++) {
       (function(idx) {
         var ring = document.createElement("div");
-        Object.assign(ring.style, {
-          position: "absolute",
-          left: "50%",
-          top: "50%",
-          width: "0",
-          height: "0",
-          border: "2px solid " + color,
-          borderRadius: "50%",
-          transform: "translate(-50%,-50%)",
-          opacity: "0.6",
-          borderTopColor: "transparent"
-        });
+        ring.style.cssText = "position:absolute;left:50%;top:50%;width:0;height:0;border:2px solid " + color + ";border-radius:50%;transform:translate(-50%,-50%);opacity:0.6;border-top-color:transparent;border-bottom-color:transparent;";
         disk.appendChild(ring);
         var anim = ring.animate([
           { width: '0px', height: '0px', transform: 'translate(-50%,-50%) rotate(0deg)', opacity: 0 },
@@ -382,17 +304,7 @@
     
     var blackhole = document.createElement("div");
     blackhole.className = "blackhole";
-    Object.assign(blackhole.style, {
-      position: "fixed",
-      left: centerX + "px",
-      top: centerY + "px",
-      width: "0",
-      height: "0",
-      background: "radial-gradient(circle,#000 20%," + darkColor + " 50%," + color + " 70%,transparent)",
-      pointerEvents: "none",
-      zIndex: "9999",
-      transform: "translate(-50%,-50%)"
-    });
+    blackhole.style.cssText = "position:fixed;left:" + centerX + "px;top:" + centerY + "px;width:0;height:0;background:radial-gradient(circle,#000 20%," + darkColor + " 50%," + color + " 70%,transparent 100%);border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:9999;box-shadow:0 0 60px " + color + ", inset 0 0 40px " + color + ";";
     document.body.appendChild(blackhole);
     
     var bhAnim = blackhole.animate([
@@ -407,13 +319,7 @@
     var ball = document.createElement("div");
     ball.className = "flying-unique-ball " + colorClass;
     ball.textContent = String(targetNum).padStart(2, "0");
-    Object.assign(ball.style, {
-      position: "fixed",
-      left: endX + "px",
-      top: endY + "px",
-      transform: "translate(-50%,-50%) scale(1)",
-      zIndex: "10000"
-    });
+    ball.style.cssText = "position:fixed;left:" + endX + "px;top:" + endY + "px;transform:translate(-50%,-50%) scale(1);z-index:10000;";
     document.body.appendChild(ball);
     
     var startTime = performance.now();
@@ -431,18 +337,7 @@
       if (progress < 1 && Math.random() > 0.5) {
         var trail = document.createElement("div");
         trail.className = "particle-stream";
-        Object.assign(trail.style, {
-          position: "fixed",
-          left: currentX + "px",
-          top: currentY + "px",
-          width: "4px",
-          height: "4px",
-          background: color,
-          borderRadius: "50%",
-          pointerEvents: "none",
-          zIndex: "9997",
-          opacity: "0.6"
-        });
+        trail.style.cssText = "position:fixed;left:" + currentX + "px;top:" + currentY + "px;width:4px;height:4px;background:" + color + ";border-radius:50%;pointer-events:none;z-index:9997;opacity:0.6;";
         document.body.appendChild(trail);
         trail.animate([
           { transform: 'translate(-50%,-50%) scale(1)', opacity: 0.6 },
@@ -475,18 +370,7 @@
       ball.style.opacity = Math.min(1, ease * 2);
       if (progress < 0.5 && Math.random() > 0.5) {
         var jet = document.createElement("div");
-        Object.assign(jet.style, {
-          position: "fixed",
-          left: currentX + "px",
-          top: currentY + "px",
-          width: "3px",
-          height: "3px",
-          background: color,
-          borderRadius: "50%",
-          pointerEvents: "none",
-          zIndex: "9997",
-          boxShadow: "0 0 4px " + color
-        });
+        jet.style.cssText = "position:fixed;left:" + currentX + "px;top:" + currentY + "px;width:3px;height:3px;background:" + color + ";border-radius:50%;pointer-events:none;z-index:9997;box-shadow:0 0 6px " + color + ";";
         document.body.appendChild(jet);
         var jetAngle = Math.random() * Math.PI * 2;
         var jetDist = 30 + Math.random() * 50;
@@ -542,7 +426,7 @@
           const hit = hitCounts[n] || 0;
           const isGray = (hit > 0);
           const color = numProps[n] ? numProps[n].color : getBallColor(n);
-          let baseColorClass = isGray ? "ball-gray" : getColorClass(color);
+          let baseColorClass = isGray ? "ball-gray" : (color === "red" ? "ball-red" : (color === "green" ? "ball-green" : "ball-blue"));
           const isTarget = (n === uniqueUnhitNum);
           const flashClass = isTarget ? "flash-unique" : "";
           let markHtml = "";
@@ -563,14 +447,14 @@
           htmlParts.push('<div class="flex items-start gap-2 mb-2 flex-wrap"><span class="text-xs text-gray-500 font-mono min-w-[30px] pt-2">0次：</span><div class="flex flex-wrap gap-1.5 flex-1">');
           zeroCountNumbers.forEach(n => {
             const color = numProps[n] ? numProps[n].color : getBallColor(n);
-            const colorClass = getColorClass(color);
+            const colorClass = color === "red" ? "ball-red" : (color === "green" ? "ball-green" : "ball-blue");
             htmlParts.push(`<button class="ball-3d ${colorClass}" data-num="${n}">${String(n).padStart(2, "0")}</button>`);
           });
           htmlParts.push("</div></div>");
         }
       }
 
-      htmlParts.push(`<div class="mt-4 grid grid-cols-3 gap-2 p-3 bg-transparent rounded-lg border border-[#00ffea]/20"><div class="text-center"><div class="text-[#00ffea] font-bold text-lg">${unique}</div><div class="text-xs text-gray-400">不同号</div></div><div class="text-center"><div class="text-[#00ffea] font-bold text-lg">${adjustedTotal}</div><div class="text-xs text-gray-400">总频次</div></div><div class="text-center"><div class="text-[#00ffea] font-bold text-lg">${avg}</div><div class="text-xs text-gray-400">平均值</div></div></div>`);
+      htmlParts.push(`<div class="mt-4 grid grid-cols-3 gap-2 p-3 bg-transparent rounded-lg border border-[#00ffea]/20"><div class="text-center"><div class="text-[#00ffea] font-bold text-lg">${unique}</div><div class="text-xs text-gray-500">有效数字个数</div></div><div class="text-center"><div class="text-[#00ffea] font-bold text-lg">${adjustedTotal}</div><div class="text-xs text-gray-500">调整后总次数</div></div><div class="text-center"><div class="text-[#00ffea] font-bold text-lg">${avg}</div><div class="text-xs text-gray-500">调整后平均次数</div></div></div>`);
       container.innerHTML = htmlParts.join("");
 
       if (uniqueUnhitNum) {
@@ -578,7 +462,7 @@
         if (lastUniqueNum !== uniqueUnhitNum) {
           lastUniqueNum = uniqueUnhitNum;
           const flyColor = numProps[uniqueUnhitNum] ? numProps[uniqueUnhitNum].color : getBallColor(uniqueUnhitNum);
-          const flyColorClass = getColorClass(flyColor);
+          const flyColorClass = flyColor === "red" ? "ball-red" : (flyColor === "green" ? "ball-green" : "ball-blue");
           setTimeout(() => launchUniqueFlyEffect(uniqueUnhitNum, flyColorClass), 100);
         }
       } else { lastUniqueNum = null; }
@@ -634,26 +518,26 @@
     const s = Math.floor((diff % 60000) / 1000);
     DOM.lotteryTime.textContent = "距开奖 " + String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
   }
-  async function safeFetch(url, options = {}, retries = FETCH_RETRIES) {
+  async function safeFetch(url, options = {}, retries = 2) {
     for (let i = 0; i <= retries; i++) {
       try {
         let res;
         if (typeof AbortController !== "undefined") {
           const ctrl = new AbortController();
-          const tid = setTimeout(() => ctrl.abort(), options.timeout || FETCH_TIMEOUT);
+          const tid = setTimeout(() => ctrl.abort(), options.timeout || 8000);
           res = await fetch(url, { ...options, signal: ctrl.signal });
           clearTimeout(tid);
         } else {
           res = await Promise.race([
             fetch(url, options),
-            new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), options.timeout || FETCH_TIMEOUT))
+            new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), options.timeout || 8000))
           ]);
         }
         if (!res.ok) throw new Error("HTTP " + res.status);
         return res;
       } catch (e) {
         if (i === retries) throw e;
-        await new Promise(r => setTimeout(r, RETRY_DELAY));
+        await new Promise(r => setTimeout(r, 800));
       }
     }
   }
@@ -662,14 +546,14 @@
     isFetchingLottery = true;
     const btn = DOM.refreshLotteryBtn;
     const origHtml = btn ? btn.innerHTML : "";
-    if (btn) { btn.innerHTML = '<svg class="animate-spin w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>'; }
+    if (btn) { btn.innerHTML = '<svg class="animate-spin w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>加载中...'; btn.disabled = true; }
     try {
       const res = await safeFetch(API_CONFIG.live + "?_t=" + Date.now());
       const data = await res.json();
       if (!Array.isArray(data) || !data[0]) { showToast("暂无开奖数据"); return; }
       const item = data[0];
-      if (!item.openCode || typeof item.openCode !== "string") { showToast("数据字段不完整"); return; }
-      try { localStorage.setItem(LS_CACHE_KEY, JSON.stringify({ data, time: Date.now() })); } catch (e) { console.warn("Failed to cache lottery data", e); }
+      if (!item.openCode || typeof item.openCode !== "string" || !item.wave) { showToast("数据字段不完整"); return; }
+      try { localStorage.setItem(LS_CACHE_KEY, JSON.stringify({ data, time: Date.now() })); } catch (e) {}
       const isNewPeriod = lastLotteryPeriod !== item.expect;
       if (isNewPeriod) { lastLotteryPeriod = item.expect; isCurrentDrawComplete = false; }
       renderLottery(item);
@@ -690,7 +574,7 @@
           const cache = JSON.parse(cacheRaw);
           if (cache.data && cache.data[0]) { renderLottery(cache.data[0]); showToast("离线模式：显示缓存数据"); return; }
         }
-      } catch (cacheErr) { console.warn("Failed to load cache", cacheErr); }
+      } catch (cacheErr) {}
       showToast("获取开奖失败");
     } finally {
       isFetchingLottery = false;
@@ -698,40 +582,52 @@
     }
   }
 
-  // 修复：实时开奖渲染，使用号码自身属性（波色、生肖、五行）避免 API 数据错乱
   function renderLottery(item) {
     const codes = String(item.openCode || "").split(",").map(c => escapeHtml(c.trim()));
+    const waves = String(item.wave || "").split(",").map(w => {
+      w = w.trim();
+      if (w === "红" || w === "red") return "red";
+      if (w === "蓝" || w === "blue") return "blue";
+      if (w === "绿" || w === "green") return "green";
+      return w;
+    });
+    const zodiacs = codes.map(c => {
+      const n = parseInt(c, 10);
+      if (isNaN(n) || n < 1 || n > 49) return "";
+      return numProps[n]?.shengXiao || "";
+    });
+
     const container = DOM.lotteryBalls;
     if (!container) return;
     container.className = "result-balls-row";
     container.innerHTML = "";
 
-    // 辅助函数：生成单个号码的 HTML
-    function createBallHTML(code, idx) {
-      const num = parseInt(code, 10);
-      const isValid = !isNaN(num) && num >= 1 && num <= 49;
-      // 使用号码自身属性获取波色、生肖、五行
-      const waveColor = isValid ? getNumberWave(num) : "green";
-      const colorClass = getWaveColorClass(waveColor);
-      const zodiac = isValid ? getNumberZodiac(num) : "";
-      const wuxing = isValid ? getNumberWuxing(num, CURRENT_YEAR) : "?";
-      const wxCls = WX_CLASS_MAP[wuxing] || "";
-      return `<div class="result-ball-item"><div class="result-ball ${colorClass}" style="animation-delay: ${idx * ANIMATION_DELAY_MS}ms">${code.padStart(2, "0")}<div class="result-ball-meta">${escapeHtml(zodiac)}/<span class="${wxCls}">${escapeHtml(wuxing)}</span></div></div></div>`;
-    }
+    const wxClassMap = { 金: "wx-gold", 木: "wx-wood", 水: "wx-water", 火: "wx-fire", 土: "wx-earth" };
 
-    // 渲染前6个平码
     for (let i = 0; i < 6 && i < codes.length; i++) {
-      container.innerHTML += createBallHTML(codes[i], i);
+      const num = parseInt(codes[i], 10);
+      const colorClass = waves[i] === "red" ? "result-ball-red" : (waves[i] === "green" ? "result-ball-green" : "result-ball-blue");
+      const wx = (num >= 1 && num <= 49) ? (numProps[num]?.five || "?") : "?";
+      const wxCls = wxClassMap[wx] || "";
+      const div = document.createElement("div");
+      div.className = "result-ball-item";
+      div.innerHTML = `<div class="result-ball ${colorClass}" style="animation-delay: ${i * 150}ms">${escapeHtml(codes[i].padStart(2, "0"))}<div class="result-ball-meta">${escapeHtml(zodiacs[i])}/<span class="${wxCls}">${wx}</span></div></div>`;
+      container.appendChild(div);
     }
-    // 渲染特码（第7个）
     if (codes.length >= 7) {
       const plus = document.createElement("div");
       plus.className = "result-plus-sign";
       plus.textContent = "+";
       container.appendChild(plus);
-      container.innerHTML += createBallHTML(codes[6], 6);
+      const num = parseInt(codes[6], 10);
+      const colorClass = waves[6] === "red" ? "result-ball-red" : (waves[6] === "green" ? "result-ball-green" : "result-ball-blue");
+      const wx = (num >= 1 && num <= 49) ? (numProps[num]?.five || "?") : "?";
+      const wxCls = wxClassMap[wx] || "";
+      const div = document.createElement("div");
+      div.className = "result-ball-item";
+      div.innerHTML = `<div class="result-ball ${colorClass}" style="animation-delay: ${6 * 150}ms">${escapeHtml(codes[6].padStart(2, "0"))}<div class="result-ball-meta">${escapeHtml(zodiacs[6])}/<span class="${wxCls}">${wx}</span></div></div>`;
+      container.appendChild(div);
     }
-
     void container.offsetHeight;
     if (DOM.lotteryPeriod) DOM.lotteryPeriod.textContent = escapeHtml(item.expect || "--");
     if (DOM.lotteryTime) DOM.lotteryTime.textContent = escapeHtml((item.openTime || "--").replace(" ", "\n"));
@@ -740,18 +636,16 @@
   // ---------- 历史记录 ----------
   let currentHistoryData = [], currentHistorySorted = [], currentHistoryPage = 1, historyCache = {}, historyYearLoaded = null;
 
-  // 修复：历史记录渲染，使用号码自身属性，不再依赖 API 返回的 wave 字段
   function renderBallsHTML(codes, waves, zodiacs, year) {
     year = year || CURRENT_YEAR;
     let html = "";
     codes.forEach((code, i) => {
+      const wave = waves[i];
+      const zodiac = zodiacs[i];
+      const cc = wave === "blue" || wave === "蓝" ? "history-ball-blue" : wave === "green" || wave === "绿" ? "history-ball-green" : "history-ball-red";
       const num = parseInt(code, 10);
-      const isValid = !isNaN(num) && num >= 1 && num <= 49;
-      const waveColor = isValid ? getNumberWave(num) : "green";
-      const cc = waveColor === "blue" ? "history-ball-blue" : waveColor === "green" ? "history-ball-green" : "history-ball-red";
-      const five = isValid ? getNumberWuxing(num, year) : "?";
-      const zodiac = (zodiacs && zodiacs[i]) || (isValid ? getNumberZodiac(num) : "");
-      html += `<div class="history-ball-card ${cc}"><div class="history-ball-number">${escapeHtml(code)}</div><div class="history-ball-tag">${escapeHtml(zodiac)}/${escapeHtml(five)}</div></div>`;
+      const five = (num >= 1 && num <= 49) ? getFive(num, year) : "";
+      html += `<div class="history-ball-card ${cc}"><div class="history-ball-number">${escapeHtml(code)}</div><div class="history-ball-tag">${escapeHtml(zodiac || "")}/${escapeHtml(five)}</div></div>`;
       if (i === 5) html += '<span class="history-plus-sign">+</span>';
     });
     return html;
@@ -788,8 +682,8 @@
         let ballsHtml = "";
         if (item.openCode && item.openCode.trim()) {
           const codes = item.openCode.split(",").map(c => escapeHtml(c.trim()));
-          const waves = (item.wave || "").split(",").map(w => w.trim());
-          const zodiacs = (item.zodiac || "").split(",").map(z => z.trim());
+          const waves = (item.wave || "").split(",").map(w => escapeHtml(w.trim()));
+          const zodiacs = (item.zodiac || "").split(",").map(z => escapeHtml(z.trim()));
           const recordYear = historyYearLoaded || CURRENT_YEAR;
           ballsHtml = renderBallsHTML(codes, waves, zodiacs, recordYear);
         } else {
@@ -819,92 +713,65 @@
     }
   }
 
-  // ---------- 抽屉系统（添加内联样式后备）----------
+  // ---------- 抽屉系统 ----------
   const DrawerSystem = {
     current: null,
-    // 内联样式后备常量
-    inlineLabelStyle: 'display:inline-block; padding:6px 12px; background:rgba(255,255,255,0.1); border:1px solid rgba(0,255,234,0.3); border-radius:4px; color:#ccc; font-size:13px; cursor:pointer; transition:all 0.2s; text-align:center; user-select:none;',
-    inlineCheckedStyle: 'background:#00ffea; color:#000; border-color:#00ffea; box-shadow:0 0 6px #00ffea;',
     templates: {
-      shama: () => `<textarea id="kill-input" rows="3" class="dinput" style="background:#1e1e2f; border:1px solid #3f3f6f; border-radius:12px; padding:10px; width:100%; color:#fff;">${state.killNums.join(" ")}</textarea>`,
+      shama: () => `<textarea id="kill-input" rows="3" class="dinput">${state.killNums.join(" ")}</textarea>`,
       shengxiao: () => {
         const sxs = ["鼠","牛","虎","兔","龙","蛇","马","羊","猴","鸡","狗","猪"];
         const sel = state.selectedFilters.shengxiao;
-        return '<div class="dgrid-6" style="display:grid; grid-template-columns:repeat(6,1fr); gap:8px;">' + sxs.map(sx => {
-          const checked = sel.includes("生肖"+sx);
-          return `<label style="display:block;"><input type="checkbox" class="filter-checkbox hidden" value="生肖${sx}" data-drawer="shengxiao" ${checked?"checked":""} style="display:none;"><span class="filter-label" style="${DrawerSystem.inlineLabelStyle}${checked ? DrawerSystem.inlineCheckedStyle : ''}">${sx}</span></label>`;
-        }).join("") + '</div>';
+        return '<div class="dgrid-6">' + sxs.map(sx => `<label><input type="checkbox" class="filter-checkbox hidden" value="生肖${sx}" data-drawer="shengxiao" ${sel.includes("生肖"+sx)?"checked":""}><span class="filter-label dbtn">${sx}</span></label>`).join("") + "</div>";
       },
       haomatou: () => {
         const heads = [["0头单","1头单","2头单","3头单","4头单"],["0头双","1头双","2头双","3头双","4头双"]];
         const sel = state.selectedFilters.haomatou;
-        return heads.map(row => '<div class="dflex" style="display:flex; gap:8px; margin-bottom:8px;">' + row.map(h => {
-          const checked = sel.includes(h);
-          return `<label class="dflex-1" style="flex:1;"><input type="checkbox" class="filter-checkbox hidden" value="${h}" data-drawer="haomatou" ${checked?"checked":""} style="display:none;"><span class="filter-label" style="${DrawerSystem.inlineLabelStyle}${checked ? DrawerSystem.inlineCheckedStyle : ''}">${h}</span></label>`;
-        }).join("") + '</div>').join("");
+        return heads.map(row => '<div class="dflex">' + row.map(h => `<label class="dflex-1"><input type="checkbox" class="filter-checkbox hidden" value="${h}" data-drawer="haomatou" ${sel.includes(h)?"checked":""}><span class="filter-label dbtn dbtn-sm">${h}</span></label>`).join("") + "</div>").join("");
       },
       weishu: () => {
         const tails = [["0尾","1尾","2尾","3尾","4尾"],["5尾","6尾","7尾","8尾","9尾"]];
         const sel = state.selectedFilters.weishu;
-        return tails.map(row => '<div class="dflex" style="display:flex; gap:8px; margin-bottom:8px;">' + row.map(t => {
-          const checked = sel.includes(t);
-          return `<label class="dflex-1" style="flex:1;"><input type="checkbox" class="filter-checkbox hidden" value="${t}" data-drawer="weishu" ${checked?"checked":""} style="display:none;"><span class="filter-label" style="${DrawerSystem.inlineLabelStyle}${checked ? DrawerSystem.inlineCheckedStyle : ''}">${t}</span></label>`;
-        }).join("") + '</div>').join("");
+        return tails.map(row => '<div class="dflex">' + row.map(t => `<label class="dflex-1"><input type="checkbox" class="filter-checkbox hidden" value="${t}" data-drawer="weishu" ${sel.includes(t)?"checked":""}><span class="filter-label dbtn dbtn-sm">${t}</span></label>`).join("") + "</div>").join("");
       },
       shuduan: () => {
         const duans = ["1段","2段","3段","4段","5段","6段","7段"];
         const sel = state.selectedFilters.shuduan;
-        return '<div class="dflex-wrap" style="display:flex; flex-wrap:wrap; gap:8px;">' + duans.map(d => {
-          const checked = sel.includes(d);
-          return `<label><input type="checkbox" class="filter-checkbox hidden" value="${d}" data-drawer="shuduan" ${checked?"checked":""} style="display:none;"><span class="filter-label" style="${DrawerSystem.inlineLabelStyle}${checked ? DrawerSystem.inlineCheckedStyle : ''}">${d}</span></label>`;
-        }).join("") + '</div>';
+        return '<div class="dflex-wrap">' + duans.map(d => `<label><input type="checkbox" class="filter-checkbox hidden" value="${d}" data-drawer="shuduan" ${sel.includes(d)?"checked":""}><span class="filter-label dbtn dbtn-md">${d}</span></label>`).join("") + "</div>";
       },
       bose: () => {
         const items = [["红波单","蓝波单","绿波单"],["红波双","蓝波双","绿波双"]];
         const sel = state.selectedFilters.bose;
-        return items.map(row => '<div class="dflex" style="display:flex; gap:8px; margin-bottom:8px;">' + row.map(item => {
-          const checked = sel.includes(item);
-          return `<label class="dflex-1" style="flex:1;"><input type="checkbox" class="filter-checkbox hidden" value="${item}" data-drawer="bose" ${checked?"checked":""} style="display:none;"><span class="filter-label" style="${DrawerSystem.inlineLabelStyle}${checked ? DrawerSystem.inlineCheckedStyle : ''}">${item}</span></label>`;
-        }).join("") + '</div>').join("");
+        return items.map(row => '<div class="dflex">' + row.map(item => `<label class="dflex-1"><input type="checkbox" class="filter-checkbox hidden" value="${item}" data-drawer="bose" ${sel.includes(item)?"checked":""}><span class="filter-label dbtn dbtn-sm">${item.replace("波","")}</span></label>`).join("") + "</div>").join("");
       },
       wuxing: () => {
         const table = generateWuxingTable(CURRENT_YEAR);
         const wx = {};
         for (const [k,v] of Object.entries(table)) wx[k] = v.map(n => String(n).padStart(2,'0')).join(' ');
         const sel = state.selectedFilters.wuxing;
-        return '<div class="dspace-y" style="display:flex; flex-direction:column; gap:12px;">' + Object.entries(wx).map(([k,v]) => {
-          const checked = sel.includes(k);
-          return `<div class="wuxing-row" style="display:flex; align-items:center; gap:12px; padding:6px 0; border-bottom:1px solid #2d2d2d;"><label class="ditems-center" style="display:flex; align-items:center; gap:8px; min-width:0; flex-shrink:0;"><input type="checkbox" class="filter-checkbox hidden" value="${k}" data-drawer="wuxing" ${checked?"checked":""} style="display:none;"><span class="filter-label" style="${DrawerSystem.inlineLabelStyle}${checked ? DrawerSystem.inlineCheckedStyle : ''}">${k}</span></label><span class="dtext-xs" style="font-size:12px; color:#9ca3af; white-space:nowrap;">${escapeHtml(v)}</span></div>`;
-        }).join("") + '</div>';
+        return '<div class="dspace-y">' + Object.entries(wx).map(([k,v]) => `<div class="wuxing-row"><label class="ditems-center" style="gap:8px;min-width:0;flex-shrink:0;"><input type="checkbox" class="filter-checkbox hidden" value="${k}" data-drawer="wuxing" ${sel.includes(k)?"checked":""}><span class="filter-label dbtn dbtn-fixed wuxing-btn-fixed">${k}</span></label><span class="wuxing-nums">${v}</span></div>`).join("") + "</div>";
       },
       bandanshuang: () => {
         const items = [["合数单","小单","大单"],["合数双","小双","大双"]];
         const sel = state.selectedFilters.bandanshuang;
-        return items.map(row => '<div class="dflex" style="display:flex; gap:8px; margin-bottom:8px;">' + row.map(item => {
-          const checked = sel.includes(item);
-          return `<label class="dflex-1" style="flex:1;"><input type="checkbox" class="filter-checkbox hidden" value="${item}" data-drawer="bandanshuang" ${checked?"checked":""} style="display:none;"><span class="filter-label" style="${DrawerSystem.inlineLabelStyle}${checked ? DrawerSystem.inlineCheckedStyle : ''}">${item}</span></label>`;
-        }).join("") + '</div>').join("");
+        return items.map(row => '<div class="dflex">' + row.map(item => `<label class="dflex-1"><input type="checkbox" class="filter-checkbox hidden" value="${item}" data-drawer="bandanshuang" ${sel.includes(item)?"checked":""}><span class="filter-label dbtn dbtn-sm">${item}</span></label>`).join("") + "</div>").join("");
       },
       heshu: () => {
         const hes = Array.from({ length: 13 }, (_, i) => (i + 1) + "合");
         const sel = state.selectedFilters.heshu;
-        return '<div class="dgrid-4" style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px;">' + hes.map(h => {
-          const checked = sel.includes(h);
-          return `<label><input type="checkbox" class="filter-checkbox hidden" value="${h}" data-drawer="heshu" ${checked?"checked":""} style="display:none;"><span class="filter-label" style="${DrawerSystem.inlineLabelStyle}${checked ? DrawerSystem.inlineCheckedStyle : ''}">${h}</span></label>`;
-        }).join("") + '</div>';
+        return '<div class="dgrid-4">' + hes.map(h => `<label><input type="checkbox" class="filter-checkbox hidden" value="${h}" data-drawer="heshu" ${sel.includes(h)?"checked":""}><span class="filter-label dbtn dbtn-sm">${h}</span></label>`).join("") + "</div>";
       },
       history: () => {
         let opts = "";
         for (let y = new Date().getFullYear(); y >= 2020; y--) opts += `<option value="${y}">${y}年</option>`;
         return [
           '<div>',
-            `<select id="historyYear" class="dselect" style="background:#1e1e2f; border:1px solid #3f3f6f; border-radius:12px; padding:8px 12px; color:#fff; width:100%;"><option value="">选择年份</option>${opts}</select>`,
-            '<div id="historyLoading" class="dhidden dtext-center dpy-4" style="display:none; text-align:center; padding:16px 0;"><svg class="animate-spin" style="width:24px;height:24px;margin:0 auto;color:#00ffea;" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>',
-            '<div id="historyContent" class="dmt-3 hide-scrollbar" style="margin-top:12px;"></div>',
-            '<div id="historyPagination" class="dflex-between dmt-6 dpx-1 dhidden" style="display:flex; justify-content:space-between; margin-top:24px; padding:0 4px;">',
-              '<button id="history-prev" class="dpage-btn" style="background:#1e1e2f; border:none; padding:6px 16px; border-radius:20px; color:#00ffea; cursor:pointer;">← 上1页</button>',
-              '<div class="dtext-sm" style="font-size:14px; text-align:center;">第 <span id="historyPageNum" style="font-weight:bold;color:#00ffea;">1</span> 页 / <span id="historyTotalPages" class="dtext-gray" style="color:#9ca3af;">1</span></div>',
-              '<button id="history-next" class="dpage-btn" style="background:#1e1e2f; border:none; padding:6px 16px; border-radius:20px; color:#00ffea; cursor:pointer;">下1页 →</button>',
+            `<select id="historyYear" class="dselect"><option value="">选择年份</option>${opts}</select>`,
+            '<div id="historyLoading" class="dhidden dtext-center dpy-4"><svg class="animate-spin" style="width:24px;height:24px;margin:0 auto;color:#00ffea;" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>',
+            '<div id="historyContent" class="dmt-3 hide-scrollbar"></div>',
+            '<div id="historyPagination" class="dflex-between dmt-6 dpx-1 dhidden">',
+              '<button id="history-prev" class="dpage-btn">← 上1页</button>',
+              '<div class="dtext-sm" style="text-align:center;">第 <span id="historyPageNum" style="font-weight:bold;color:#00ffea;">1</span> 页 / <span id="historyTotalPages" class="dtext-gray">1</span> 页</div>',
+              '<button id="history-next" class="dpage-btn">下1页 →</button>',
             '</div>',
           '</div>'
         ].join("");
@@ -913,19 +780,17 @@
     open(type) {
       if (this.current === type) { this.close(); return; }
       this.current = type;
-      const titles = { shama: "杀码", shengxiao: "生肖", haomatou: "头数", weishu: "尾数", shuduan: "数段", bose: "波色", wuxing: "五行", bandanshuang: "半单双", heshu: "合数", history: "历史" };
+      const titles = { shama: "杀码", shengxiao: "生肖", haomatou: "头数", weishu: "尾数", shuduan: "数段", bose: "波色", wuxing: "五行", bandanshuang: "半单双", heshu: "合数", history: "历史开奖" };
       DOM.drawer_title.textContent = titles[type] || "筛选器";
       const contentDiv = DOM.drawer_content;
       if (!contentDiv) { showToast("抽屉初始化失败"); return; }
       contentDiv.innerHTML = this.templates[type] ? this.templates[type]() : "<p>暂无内容</p>";
-      // 重新绑定动态生成的复选框样式同步（因为内联样式已经直接写在 checked 状态中，但为了切换时样式更新，需要添加监听）
-      this.syncCheckboxStyles(contentDiv);
       DOM.drawer_overlay.classList.remove("hidden");
       DOM.drawer_overlay.style.display = "block";
       setTimeout(() => { DOM.drawer_overlay.classList.remove("opacity-0"); DOM.drawer_overlay.style.opacity = "1"; }, 10);
       DOM.drawer_container.classList.add("open");
       this.updateNavState(type);
-      if (type === "history") setTimeout(() => { const sel = document.getElementById("historyYear"); if (sel && !sel.value) sel.value = historyYearLoaded || ""; if (sel) sel.dispatchEvent(new Event("change")); }, 100);
+      if (type === "history") setTimeout(() => { const sel = document.getElementById("historyYear"); if (sel && !sel.value) sel.value = historyYearLoaded || ""; if (sel) sel.dispatchEvent(new Event("change")); }, 50);
     },
     close() {
       DOM.drawer_container.classList.remove("open");
@@ -934,25 +799,6 @@
       setTimeout(() => { DOM.drawer_overlay.classList.add("hidden"); DOM.drawer_overlay.style.display = "none"; }, 300);
       this.current = null;
       this.updateNavState(null);
-    },
-    // 同步复选框选中时对应 label 的样式
-    syncCheckboxStyles(container) {
-      if (!container) return;
-      const checkboxes = container.querySelectorAll('.filter-checkbox');
-      checkboxes.forEach(cb => {
-        const labelSpan = cb.nextElementSibling;
-        if (labelSpan && labelSpan.classList.contains('filter-label')) {
-          const updateStyle = () => {
-            if (cb.checked) {
-              labelSpan.style.cssText = this.inlineLabelStyle + this.inlineCheckedStyle;
-            } else {
-              labelSpan.style.cssText = this.inlineLabelStyle;
-            }
-          };
-          updateStyle();
-          cb.addEventListener('change', updateStyle);
-        }
-      });
     },
     bindGlobalDelegation() {
       const content = DOM.drawer_content;
@@ -981,7 +827,7 @@
                 else currentHistoryData = [];
               }
               currentHistorySorted = []; currentHistoryPage = 1; renderHistoryPage();
-            } catch (e) { console.error("History load error:", e); currentHistoryData = []; if (cont) cont.innerHTML = '<div style="color:#f87171;">加载失败</div>'; }
+            } catch (e) { currentHistoryData = []; if (cont) cont.innerHTML = '<div style="color:#f87171;">加载失败</div>'; }
             finally { if (loadDiv) loadDiv.classList.add("dhidden"); }
           })();
         }
@@ -1030,32 +876,27 @@
 
   // ---------- 自动刷新开奖 ----------
   function initAutoRefresh() {
+    // 启动开奖倒计时显示
     updateCountdown();
     countdownTimer = setInterval(updateCountdown, 1000);
-    
-    document.addEventListener('visibilitychange', function() {
-      if (document.visibilityState === 'visible') {
-        setTimeout(function() {
-          fetchLottery();
-        }, VISIBILITY_CHECK_DELAY);
-      }
-    });
-    
+    // 自动刷新策略：开奖时段高频 + 全时段兜底刷新
     setInterval(() => {
       if (isFetchingLottery || document.visibilityState !== "visible") return;
       const now = new Date();
       const totalSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
-      const isInDrawWindow = totalSec >= DRAW_START_SECONDS && totalSec <= DRAW_END_SECONDS;
-      
+      const DRAW_START = 21 * 3600 + 30 * 60; // 21:30
+      const DRAW_END   = 21 * 3600 + 40 * 60; // 21:40
+      const isInDrawWindow = totalSec >= DRAW_START && totalSec <= DRAW_END;
+      // 开奖时间段：每5秒刷新一次（不判断 isCurrentDrawComplete，以便检测新期号）
       if (isInDrawWindow) {
-        if (!window._lastAutoFetchTime || (Date.now() - window._lastAutoFetchTime) >= AUTO_FETCH_INTERVAL) {
+        if (!window._lastAutoFetchTime || (Date.now() - window._lastAutoFetchTime) >= 5000) {
           window._lastAutoFetchTime = Date.now();
           fetchLottery();
         }
         return;
       }
-      
-      if (!window._lastRegularFetchTime || (Date.now() - window._lastRegularFetchTime) >= REGULAR_FETCH_INTERVAL) {
+      // 非开奖时间：每60秒刷新一次兜底（检测新期号发布）
+      if (!window._lastRegularFetchTime || (Date.now() - window._lastRegularFetchTime) >= 60000) {
         window._lastRegularFetchTime = Date.now();
         fetchLottery();
       }
@@ -1068,12 +909,13 @@
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     let width, height, particles = [], frameId = null, lastTime = 0;
+    const MAX_PARTICLES = 60;
     function resize() { width = window.innerWidth; height = window.innerHeight; canvas.width = width; canvas.height = height; }
     function createParticle(yOverride) {
       const speedY = (Math.random() * 50 + 20);
       const speedX = (Math.random() - 0.5) * 24;
       const y = yOverride !== undefined ? yOverride : height + Math.random() * 30;
-      return { x: Math.random() * width, y: y, r: Math.random() * 2.5 + 0.8, speedY: speedY, speedX: speedX, alpha: Math.random() * 0.4 + 0.15, hue: Math.random() * 360, wobble: Math.random() * Math.PI, wobbleSpeed: Math.random() * 0.03 + 0.01 };
+      return { x: Math.random() * width, y: y, r: Math.random() * 2.5 + 0.8, speedY: speedY, speedX: speedX, alpha: Math.random() * 0.4 + 0.15, hue: Math.random() * 360, wobble: Math.random() * Math.PI * 2, wobbleSpeed: (Math.random() * 1.0 + 0.3) };
     }
     function initDots() { particles = []; for (let i = 0; i < MAX_PARTICLES; i++) particles.push(createParticle(Math.random() * height)); }
     function animate(timestamp) {
@@ -1101,21 +943,7 @@
   function init() {
     try {
       cacheDOM(); loadState(); initWorker(); subscribe(onStateChange); initResultDelegation(); DrawerSystem.bindGlobalDelegation();
-      // 修复示例按钮：增加存在性检查和健壮性
-      if (DOM.exampleBtn) {
-        DOM.exampleBtn.addEventListener("click", () => {
-          if (DOM.numbers) {
-            DOM.numbers.value = "龙蛇马 12 25 36 8 17 29 41 5 19 33 47";
-            runAnalysis();
-            showToast("已填入示例号码");
-          } else {
-            console.warn("numbers input not found");
-            showToast("输入框未找到");
-          }
-        });
-      } else {
-        console.warn("示例按钮 (#exampleBtn) 不存在");
-      }
+      if (DOM.exampleBtn) DOM.exampleBtn.addEventListener("click", () => { DOM.numbers.value = "龙蛇马 12 25 36 8 17 29 41 5 19 33 47"; runAnalysis(); });
       if (DOM.clearBtn) DOM.clearBtn.addEventListener("click", () => { DOM.numbers.value = ""; runAnalysis(); showToast("已清空输入"); });
       if (DOM.copyResultBtn) DOM.copyResultBtn.addEventListener("click", copyResult);
       if (DOM.numbers) DOM.numbers.addEventListener("input", () => runAnalysis());
@@ -1132,11 +960,8 @@
       if (DOM.drawer_overlay) DOM.drawer_overlay.addEventListener("click", () => DrawerSystem.close());
       fetchLottery(); runAnalysis(); initAutoRefresh(); initParticles();
       window.addEventListener("beforeunload", () => { terminateWorker(); if (countdownTimer) clearInterval(countdownTimer); });
-      console.log("%c✅ 神码再现 v" + APP_VERSION + " (修复样式与示例按钮) 已加载", "color:#00ffea;font-weight:bold");
-    } catch (e) {
-      console.error("初始化失败:", e);
-      alert("页面初始化出错，请刷新重试。错误: " + e.message);
-    }
+      console.log("%c✅ 神码再现 v3.6.3 无直播版已加载", "color:#00ffea;font-weight:bold");
+    } catch (e) { console.error("初始化失败:", e); alert("页面初始化出错，请刷新重试。错误: " + e.message); }
   }
 
   document.addEventListener("DOMContentLoaded", init);
