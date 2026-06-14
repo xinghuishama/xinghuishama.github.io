@@ -1,9 +1,9 @@
-// ======================== app.js v3.6.5 (修复开奖显示) ========================
+// ======================== app.js v3.6.6 (修复样式与示例按钮) ========================
 (function () {
   "use strict";
 
   // ========== 版本管理 ==========
-  const APP_VERSION = "3.6.5";
+  const APP_VERSION = "3.6.6";
   const TOAST_DURATION = 2000;
   const DEBOUNCE_DELAY = 200;
   const VISIBILITY_CHECK_DELAY = 300;
@@ -131,7 +131,7 @@
     return prefix + "blue";
   }
 
-  // 规范化波色值
+  // 规范化波色值（保留，但不再依赖 API）
   function normalizeWave(wave) {
     wave = wave.trim();
     if (wave === "红" || wave === "red") return "red";
@@ -819,65 +819,92 @@
     }
   }
 
-  // ---------- 抽屉系统 ----------
+  // ---------- 抽屉系统（添加内联样式后备）----------
   const DrawerSystem = {
     current: null,
+    // 内联样式后备常量
+    inlineLabelStyle: 'display:inline-block; padding:6px 12px; background:rgba(255,255,255,0.1); border:1px solid rgba(0,255,234,0.3); border-radius:24px; color:#ccc; font-size:13px; cursor:pointer; transition:all 0.2s; text-align:center; user-select:none;',
+    inlineCheckedStyle: 'background:#00ffea; color:#000; border-color:#00ffea; box-shadow:0 0 6px #00ffea;',
     templates: {
-      shama: () => `<textarea id="kill-input" rows="3" class="dinput">${state.killNums.join(" ")}</textarea>`,
+      shama: () => `<textarea id="kill-input" rows="3" class="dinput" style="background:#1e1e2f; border:1px solid #3f3f6f; border-radius:12px; padding:10px; width:100%; color:#fff;">${state.killNums.join(" ")}</textarea>`,
       shengxiao: () => {
         const sxs = ["鼠","牛","虎","兔","龙","蛇","马","羊","猴","鸡","狗","猪"];
         const sel = state.selectedFilters.shengxiao;
-        return '<div class="dgrid-6">' + sxs.map(sx => `<label><input type="checkbox" class="filter-checkbox hidden" value="生肖${sx}" data-drawer="shengxiao" ${sel.includes("生肖"+sx)?"checked":""}><span class="filter-label">${sx}</span></label>`).join("") + '</div>';
+        return '<div class="dgrid-6" style="display:grid; grid-template-columns:repeat(6,1fr); gap:8px;">' + sxs.map(sx => {
+          const checked = sel.includes("生肖"+sx);
+          return `<label style="display:block;"><input type="checkbox" class="filter-checkbox hidden" value="生肖${sx}" data-drawer="shengxiao" ${checked?"checked":""} style="display:none;"><span class="filter-label" style="${DrawerSystem.inlineLabelStyle}${checked ? DrawerSystem.inlineCheckedStyle : ''}">${sx}</span></label>`;
+        }).join("") + '</div>';
       },
       haomatou: () => {
         const heads = [["0头单","1头单","2头单","3头单","4头单"],["0头双","1头双","2头双","3头双","4头双"]];
         const sel = state.selectedFilters.haomatou;
-        return heads.map(row => '<div class="dflex">' + row.map(h => `<label class="dflex-1"><input type="checkbox" class="filter-checkbox hidden" value="${h}" data-drawer="haomatou" ${sel.includes(h)?"checked":""}><span class="filter-label">${h}</span></label>`).join("") + '</div>').join("");
+        return heads.map(row => '<div class="dflex" style="display:flex; gap:8px; margin-bottom:8px;">' + row.map(h => {
+          const checked = sel.includes(h);
+          return `<label class="dflex-1" style="flex:1;"><input type="checkbox" class="filter-checkbox hidden" value="${h}" data-drawer="haomatou" ${checked?"checked":""} style="display:none;"><span class="filter-label" style="${DrawerSystem.inlineLabelStyle}${checked ? DrawerSystem.inlineCheckedStyle : ''}">${h}</span></label>`;
+        }).join("") + '</div>').join("");
       },
       weishu: () => {
         const tails = [["0尾","1尾","2尾","3尾","4尾"],["5尾","6尾","7尾","8尾","9尾"]];
         const sel = state.selectedFilters.weishu;
-        return tails.map(row => '<div class="dflex">' + row.map(t => `<label class="dflex-1"><input type="checkbox" class="filter-checkbox hidden" value="${t}" data-drawer="weishu" ${sel.includes(t)?"checked":""}><span class="filter-label">${t}</span></label>`).join("") + '</div>').join("");
+        return tails.map(row => '<div class="dflex" style="display:flex; gap:8px; margin-bottom:8px;">' + row.map(t => {
+          const checked = sel.includes(t);
+          return `<label class="dflex-1" style="flex:1;"><input type="checkbox" class="filter-checkbox hidden" value="${t}" data-drawer="weishu" ${checked?"checked":""} style="display:none;"><span class="filter-label" style="${DrawerSystem.inlineLabelStyle}${checked ? DrawerSystem.inlineCheckedStyle : ''}">${t}</span></label>`;
+        }).join("") + '</div>').join("");
       },
       shuduan: () => {
         const duans = ["1段","2段","3段","4段","5段","6段","7段"];
         const sel = state.selectedFilters.shuduan;
-        return '<div class="dflex-wrap">' + duans.map(d => `<label><input type="checkbox" class="filter-checkbox hidden" value="${d}" data-drawer="shuduan" ${sel.includes(d)?"checked":""}><span class="filter-label">${d}</span></label>`).join("") + '</div>';
+        return '<div class="dflex-wrap" style="display:flex; flex-wrap:wrap; gap:8px;">' + duans.map(d => {
+          const checked = sel.includes(d);
+          return `<label><input type="checkbox" class="filter-checkbox hidden" value="${d}" data-drawer="shuduan" ${checked?"checked":""} style="display:none;"><span class="filter-label" style="${DrawerSystem.inlineLabelStyle}${checked ? DrawerSystem.inlineCheckedStyle : ''}">${d}</span></label>`;
+        }).join("") + '</div>';
       },
       bose: () => {
         const items = [["红波单","蓝波单","绿波单"],["红波双","蓝波双","绿波双"]];
         const sel = state.selectedFilters.bose;
-        return items.map(row => '<div class="dflex">' + row.map(item => `<label class="dflex-1"><input type="checkbox" class="filter-checkbox hidden" value="${item}" data-drawer="bose" ${sel.includes(item)?"checked":""}><span class="filter-label">${item}</span></label>`).join("") + '</div>').join("");
+        return items.map(row => '<div class="dflex" style="display:flex; gap:8px; margin-bottom:8px;">' + row.map(item => {
+          const checked = sel.includes(item);
+          return `<label class="dflex-1" style="flex:1;"><input type="checkbox" class="filter-checkbox hidden" value="${item}" data-drawer="bose" ${checked?"checked":""} style="display:none;"><span class="filter-label" style="${DrawerSystem.inlineLabelStyle}${checked ? DrawerSystem.inlineCheckedStyle : ''}">${item}</span></label>`;
+        }).join("") + '</div>').join("");
       },
       wuxing: () => {
         const table = generateWuxingTable(CURRENT_YEAR);
         const wx = {};
         for (const [k,v] of Object.entries(table)) wx[k] = v.map(n => String(n).padStart(2,'0')).join(' ');
         const sel = state.selectedFilters.wuxing;
-        return '<div class="dspace-y">' + Object.entries(wx).map(([k,v]) => `<div class="wuxing-row"><label class="ditems-center" style="gap:8px;min-width:0;flex-shrink:0;"><input type="checkbox" class="filter-checkbox hidden" value="${k}" data-drawer="wuxing" ${sel.includes(k)?"checked":""}><span class="filter-label">${k}</span></label><span class="dtext-xs dtext-gray-400" style="white-space:nowrap;">${escapeHtml(v)}</span></div>`).join("") + '</div>';
+        return '<div class="dspace-y" style="display:flex; flex-direction:column; gap:12px;">' + Object.entries(wx).map(([k,v]) => {
+          const checked = sel.includes(k);
+          return `<div class="wuxing-row" style="display:flex; align-items:center; gap:12px; padding:6px 0; border-bottom:1px solid #2d2d2d;"><label class="ditems-center" style="display:flex; align-items:center; gap:8px; min-width:0; flex-shrink:0;"><input type="checkbox" class="filter-checkbox hidden" value="${k}" data-drawer="wuxing" ${checked?"checked":""} style="display:none;"><span class="filter-label" style="${DrawerSystem.inlineLabelStyle}${checked ? DrawerSystem.inlineCheckedStyle : ''}">${k}</span></label><span class="dtext-xs" style="font-size:12px; color:#9ca3af; white-space:nowrap;">${escapeHtml(v)}</span></div>`;
+        }).join("") + '</div>';
       },
       bandanshuang: () => {
         const items = [["合数单","小单","大单"],["合数双","小双","大双"]];
         const sel = state.selectedFilters.bandanshuang;
-        return items.map(row => '<div class="dflex">' + row.map(item => `<label class="dflex-1"><input type="checkbox" class="filter-checkbox hidden" value="${item}" data-drawer="bandanshuang" ${sel.includes(item)?"checked":""}><span class="filter-label">${item}</span></label>`).join("") + '</div>').join("");
+        return items.map(row => '<div class="dflex" style="display:flex; gap:8px; margin-bottom:8px;">' + row.map(item => {
+          const checked = sel.includes(item);
+          return `<label class="dflex-1" style="flex:1;"><input type="checkbox" class="filter-checkbox hidden" value="${item}" data-drawer="bandanshuang" ${checked?"checked":""} style="display:none;"><span class="filter-label" style="${DrawerSystem.inlineLabelStyle}${checked ? DrawerSystem.inlineCheckedStyle : ''}">${item}</span></label>`;
+        }).join("") + '</div>').join("");
       },
       heshu: () => {
         const hes = Array.from({ length: 13 }, (_, i) => (i + 1) + "合");
         const sel = state.selectedFilters.heshu;
-        return '<div class="dgrid-4">' + hes.map(h => `<label><input type="checkbox" class="filter-checkbox hidden" value="${h}" data-drawer="heshu" ${sel.includes(h)?"checked":""}><span class="filter-label">${h}</span></label>`).join("") + '</div>';
+        return '<div class="dgrid-4" style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px;">' + hes.map(h => {
+          const checked = sel.includes(h);
+          return `<label><input type="checkbox" class="filter-checkbox hidden" value="${h}" data-drawer="heshu" ${checked?"checked":""} style="display:none;"><span class="filter-label" style="${DrawerSystem.inlineLabelStyle}${checked ? DrawerSystem.inlineCheckedStyle : ''}">${h}</span></label>`;
+        }).join("") + '</div>';
       },
       history: () => {
         let opts = "";
         for (let y = new Date().getFullYear(); y >= 2020; y--) opts += `<option value="${y}">${y}年</option>`;
         return [
           '<div>',
-            `<select id="historyYear" class="dselect"><option value="">选择年份</option>${opts}</select>`,
-            '<div id="historyLoading" class="dhidden dtext-center dpy-4"><svg class="animate-spin" style="width:24px;height:24px;margin:0 auto;color:#00ffea;" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>',
-            '<div id="historyContent" class="dmt-3 hide-scrollbar"></div>',
-            '<div id="historyPagination" class="dflex-between dmt-6 dpx-1 dhidden">',
-              '<button id="history-prev" class="dpage-btn">← 上1页</button>',
-              '<div class="dtext-sm" style="text-align:center;">第 <span id="historyPageNum" style="font-weight:bold;color:#00ffea;">1</span> 页 / <span id="historyTotalPages" class="dtext-gray">1</span></div>',
-              '<button id="history-next" class="dpage-btn">下1页 →</button>',
+            `<select id="historyYear" class="dselect" style="background:#1e1e2f; border:1px solid #3f3f6f; border-radius:12px; padding:8px 12px; color:#fff; width:100%;"><option value="">选择年份</option>${opts}</select>`,
+            '<div id="historyLoading" class="dhidden dtext-center dpy-4" style="display:none; text-align:center; padding:16px 0;"><svg class="animate-spin" style="width:24px;height:24px;margin:0 auto;color:#00ffea;" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>',
+            '<div id="historyContent" class="dmt-3 hide-scrollbar" style="margin-top:12px;"></div>',
+            '<div id="historyPagination" class="dflex-between dmt-6 dpx-1 dhidden" style="display:flex; justify-content:space-between; margin-top:24px; padding:0 4px;">',
+              '<button id="history-prev" class="dpage-btn" style="background:#1e1e2f; border:none; padding:6px 16px; border-radius:20px; color:#00ffea; cursor:pointer;">← 上1页</button>',
+              '<div class="dtext-sm" style="font-size:14px; text-align:center;">第 <span id="historyPageNum" style="font-weight:bold;color:#00ffea;">1</span> 页 / <span id="historyTotalPages" class="dtext-gray" style="color:#9ca3af;">1</span></div>',
+              '<button id="history-next" class="dpage-btn" style="background:#1e1e2f; border:none; padding:6px 16px; border-radius:20px; color:#00ffea; cursor:pointer;">下1页 →</button>',
             '</div>',
           '</div>'
         ].join("");
@@ -891,6 +918,8 @@
       const contentDiv = DOM.drawer_content;
       if (!contentDiv) { showToast("抽屉初始化失败"); return; }
       contentDiv.innerHTML = this.templates[type] ? this.templates[type]() : "<p>暂无内容</p>";
+      // 重新绑定动态生成的复选框样式同步（因为内联样式已经直接写在 checked 状态中，但为了切换时样式更新，需要添加监听）
+      this.syncCheckboxStyles(contentDiv);
       DOM.drawer_overlay.classList.remove("hidden");
       DOM.drawer_overlay.style.display = "block";
       setTimeout(() => { DOM.drawer_overlay.classList.remove("opacity-0"); DOM.drawer_overlay.style.opacity = "1"; }, 10);
@@ -905,6 +934,25 @@
       setTimeout(() => { DOM.drawer_overlay.classList.add("hidden"); DOM.drawer_overlay.style.display = "none"; }, 300);
       this.current = null;
       this.updateNavState(null);
+    },
+    // 同步复选框选中时对应 label 的样式
+    syncCheckboxStyles(container) {
+      if (!container) return;
+      const checkboxes = container.querySelectorAll('.filter-checkbox');
+      checkboxes.forEach(cb => {
+        const labelSpan = cb.nextElementSibling;
+        if (labelSpan && labelSpan.classList.contains('filter-label')) {
+          const updateStyle = () => {
+            if (cb.checked) {
+              labelSpan.style.cssText = this.inlineLabelStyle + this.inlineCheckedStyle;
+            } else {
+              labelSpan.style.cssText = this.inlineLabelStyle;
+            }
+          };
+          updateStyle();
+          cb.addEventListener('change', updateStyle);
+        }
+      });
     },
     bindGlobalDelegation() {
       const content = DOM.drawer_content;
@@ -1053,7 +1101,21 @@
   function init() {
     try {
       cacheDOM(); loadState(); initWorker(); subscribe(onStateChange); initResultDelegation(); DrawerSystem.bindGlobalDelegation();
-      if (DOM.exampleBtn) DOM.exampleBtn.addEventListener("click", () => { DOM.numbers.value = "龙蛇马 12 25 36 8 17 29 41 5 19 33 47"; runAnalysis(); });
+      // 修复示例按钮：增加存在性检查和健壮性
+      if (DOM.exampleBtn) {
+        DOM.exampleBtn.addEventListener("click", () => {
+          if (DOM.numbers) {
+            DOM.numbers.value = "龙蛇马 12 25 36 8 17 29 41 5 19 33 47";
+            runAnalysis();
+            showToast("已填入示例号码");
+          } else {
+            console.warn("numbers input not found");
+            showToast("输入框未找到");
+          }
+        });
+      } else {
+        console.warn("示例按钮 (#exampleBtn) 不存在");
+      }
       if (DOM.clearBtn) DOM.clearBtn.addEventListener("click", () => { DOM.numbers.value = ""; runAnalysis(); showToast("已清空输入"); });
       if (DOM.copyResultBtn) DOM.copyResultBtn.addEventListener("click", copyResult);
       if (DOM.numbers) DOM.numbers.addEventListener("input", () => runAnalysis());
@@ -1070,8 +1132,11 @@
       if (DOM.drawer_overlay) DOM.drawer_overlay.addEventListener("click", () => DrawerSystem.close());
       fetchLottery(); runAnalysis(); initAutoRefresh(); initParticles();
       window.addEventListener("beforeunload", () => { terminateWorker(); if (countdownTimer) clearInterval(countdownTimer); });
-      console.log("%c✅ 神码再现 v" + APP_VERSION + " (修复开奖显示) 已加载", "color:#00ffea;font-weight:bold");
-    } catch (e) { console.error("初始化失败:", e); alert("页面初始化出错，请刷新重试。错误: " + e.message); }
+      console.log("%c✅ 神码再现 v" + APP_VERSION + " (修复样式与示例按钮) 已加载", "color:#00ffea;font-weight:bold");
+    } catch (e) {
+      console.error("初始化失败:", e);
+      alert("页面初始化出错，请刷新重试。错误: " + e.message);
+    }
   }
 
   document.addEventListener("DOMContentLoaded", init);
