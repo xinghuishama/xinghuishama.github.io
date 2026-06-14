@@ -875,19 +875,31 @@
   window.copyResult = copyResult;
 
   // ---------- 自动刷新开奖 ----------
-  function initAutoRefresh() {
-    // 启动开奖倒计时显示
+function initAutoRefresh() {
     updateCountdown();
     countdownTimer = setInterval(updateCountdown, 1000);
-    // 自动刷新策略：开奖时段高频 + 全时段兜底刷新
+    
+    /* ========== 新增：切回前台立即补刷 ========== */
+    document.addEventListener('visibilitychange', function() {
+      if (document.visibilityState === 'visible') {
+        // 延迟300ms确保WebView从冻结恢复后再请求
+        setTimeout(function() {
+          fetchLottery();
+        }, 300);
+      }
+    });
+    
     setInterval(() => {
       if (isFetchingLottery || document.visibilityState !== "visible") return;
       const now = new Date();
       const totalSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
-      const DRAW_START = 21 * 3600 + 30 * 60; // 21:30
-      const DRAW_END   = 21 * 3600 + 40 * 60; // 21:40
+      
+      const DRAW_START = 21 * 3600 + 33 * 60 + 25;  // 21:33:25（开奖前5秒）
+      const DRAW_END   = 21 * 3600 + 34 * 60 + 30;  // 21:34:30（开奖完成+5秒余量）
+      
+      /* ========== 修复：高频窗口内始终刷新，无视 isCurrentDrawComplete ========== */
       const isInDrawWindow = totalSec >= DRAW_START && totalSec <= DRAW_END;
-      // 开奖时间段：每5秒刷新一次（不判断 isCurrentDrawComplete，以便检测新期号）
+      
       if (isInDrawWindow) {
         if (!window._lastAutoFetchTime || (Date.now() - window._lastAutoFetchTime) >= 5000) {
           window._lastAutoFetchTime = Date.now();
@@ -895,7 +907,8 @@
         }
         return;
       }
-      // 非开奖时间：每60秒刷新一次兜底（检测新期号发布）
+      
+      // 常规刷新
       if (!window._lastRegularFetchTime || (Date.now() - window._lastRegularFetchTime) >= 60000) {
         window._lastRegularFetchTime = Date.now();
         fetchLottery();
