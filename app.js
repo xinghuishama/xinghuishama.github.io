@@ -1,9 +1,9 @@
-// ======================== app.js v3.6.4 (无直播版) ========================
+// ======================== app.js v3.6.5 (修复开奖显示) ========================
 (function () {
   "use strict";
 
   // ========== 版本管理 ==========
-  const APP_VERSION = "3.6.4";
+  const APP_VERSION = "3.6.5";
   const TOAST_DURATION = 2000;
   const DEBOUNCE_DELAY = 200;
   const VISIBILITY_CHECK_DELAY = 300;
@@ -124,7 +124,7 @@
     return prefix + "blue";
   }
 
-  // 获取波色类名
+  // 获取波色类名（基于实际波色）
   function getWaveColorClass(wave, prefix = "result-ball-") {
     if (wave === "red") return prefix + "red";
     if (wave === "green") return prefix + "green";
@@ -138,6 +138,29 @@
     if (wave === "蓝" || wave === "blue") return "blue";
     if (wave === "绿" || wave === "green") return "green";
     return wave;
+  }
+
+  // 获取号码实际波色（优先使用 numProps，否则用预定义集合）
+  function getNumberWave(num) {
+    if (numProps[num] && numProps[num].color) return numProps[num].color;
+    if (RED_SET.has(num)) return "red";
+    if (BLUE_SET.has(num)) return "blue";
+    return "green";
+  }
+
+  // 获取号码五行（优先使用 numProps，否则使用 getFive 函数）
+  function getNumberWuxing(num, year) {
+    if (numProps[num] && numProps[num].five) return numProps[num].five;
+    return getFive(num, year);
+  }
+
+  // 获取号码生肖（优先使用 numProps，否则从 SHENGXIAO 反向查找）
+  function getNumberZodiac(num) {
+    if (numProps[num] && numProps[num].shengXiao) return numProps[num].shengXiao;
+    for (const [sx, nums] of Object.entries(SHENGXIAO)) {
+      if (nums.includes(num)) return sx;
+    }
+    return "";
   }
 
   // ---------- 输入解析 ----------
@@ -645,7 +668,7 @@
       const data = await res.json();
       if (!Array.isArray(data) || !data[0]) { showToast("暂无开奖数据"); return; }
       const item = data[0];
-      if (!item.openCode || typeof item.openCode !== "string" || !item.wave) { showToast("数据字段不完整"); return; }
+      if (!item.openCode || typeof item.openCode !== "string") { showToast("数据字段不完整"); return; }
       try { localStorage.setItem(LS_CACHE_KEY, JSON.stringify({ data, time: Date.now() })); } catch (e) { console.warn("Failed to cache lottery data", e); }
       const isNewPeriod = lastLotteryPeriod !== item.expect;
       if (isNewPeriod) { lastLotteryPeriod = item.expect; isCurrentDrawComplete = false; }
@@ -675,44 +698,40 @@
     }
   }
 
+  // 修复：实时开奖渲染，使用号码自身属性（波色、生肖、五行）避免 API 数据错乱
   function renderLottery(item) {
     const codes = String(item.openCode || "").split(",").map(c => escapeHtml(c.trim()));
-    const waves = String(item.wave || "").split(",").map(normalizeWave);
-    const zodiacs = codes.map(c => {
-      const n = parseInt(c, 10);
-      if (isNaN(n) || n < 1 || n > 49) return "";
-      return numProps[n]?.shengXiao || "";
-    });
-
     const container = DOM.lotteryBalls;
     if (!container) return;
     container.className = "result-balls-row";
     container.innerHTML = "";
 
-    for (let i = 0; i < 6 && i < codes.length; i++) {
-      const num = parseInt(codes[i], 10);
-      const colorClass = getWaveColorClass(waves[i]);
-      const wx = (num >= 1 && num <= 49) ? (numProps[num]?.five || "?") : "?";
-      const wxCls = WX_CLASS_MAP[wx] || "";
-      const div = document.createElement("div");
-      div.className = "result-ball-item";
-      div.innerHTML = `<div class="result-ball ${colorClass}" style="animation-delay: ${i * ANIMATION_DELAY_MS}ms">${escapeHtml(codes[i].padStart(2, "0"))}<div class="result-ball-meta">${escapeHtml(zodiacs[i])}/${wxCls}</div></div>`;
-      container.appendChild(div);
+    // 辅助函数：生成单个号码的 HTML
+    function createBallHTML(code, idx) {
+      const num = parseInt(code, 10);
+      const isValid = !isNaN(num) && num >= 1 && num <= 49;
+      // 使用号码自身属性获取波色、生肖、五行
+      const waveColor = isValid ? getNumberWave(num) : "green";
+      const colorClass = getWaveColorClass(waveColor);
+      const zodiac = isValid ? getNumberZodiac(num) : "";
+      const wuxing = isValid ? getNumberWuxing(num, CURRENT_YEAR) : "?";
+      const wxCls = WX_CLASS_MAP[wuxing] || "";
+      return `<div class="result-ball-item"><div class="result-ball ${colorClass}" style="animation-delay: ${idx * ANIMATION_DELAY_MS}ms">${code.padStart(2, "0")}<div class="result-ball-meta">${escapeHtml(zodiac)}/<span class="${wxCls}">${escapeHtml(wuxing)}</span></div></div></div>`;
     }
+
+    // 渲染前6个平码
+    for (let i = 0; i < 6 && i < codes.length; i++) {
+      container.innerHTML += createBallHTML(codes[i], i);
+    }
+    // 渲染特码（第7个）
     if (codes.length >= 7) {
       const plus = document.createElement("div");
       plus.className = "result-plus-sign";
       plus.textContent = "+";
       container.appendChild(plus);
-      const num = parseInt(codes[6], 10);
-      const colorClass = getWaveColorClass(waves[6]);
-      const wx = (num >= 1 && num <= 49) ? (numProps[num]?.five || "?") : "?";
-      const wxCls = WX_CLASS_MAP[wx] || "";
-      const div = document.createElement("div");
-      div.className = "result-ball-item";
-      div.innerHTML = `<div class="result-ball ${colorClass}" style="animation-delay: ${6 * ANIMATION_DELAY_MS}ms">${escapeHtml(codes[6].padStart(2, "0"))}<div class="result-ball-meta">${escapeHtml(zodiacs[6])}/${wxCls}</div></div>`;
-      container.appendChild(div);
+      container.innerHTML += createBallHTML(codes[6], 6);
     }
+
     void container.offsetHeight;
     if (DOM.lotteryPeriod) DOM.lotteryPeriod.textContent = escapeHtml(item.expect || "--");
     if (DOM.lotteryTime) DOM.lotteryTime.textContent = escapeHtml((item.openTime || "--").replace(" ", "\n"));
@@ -721,16 +740,18 @@
   // ---------- 历史记录 ----------
   let currentHistoryData = [], currentHistorySorted = [], currentHistoryPage = 1, historyCache = {}, historyYearLoaded = null;
 
+  // 修复：历史记录渲染，使用号码自身属性，不再依赖 API 返回的 wave 字段
   function renderBallsHTML(codes, waves, zodiacs, year) {
     year = year || CURRENT_YEAR;
     let html = "";
     codes.forEach((code, i) => {
-      const wave = normalizeWave(waves[i]);
-      const zodiac = zodiacs[i];
-      const cc = wave === "blue" ? "history-ball-blue" : wave === "green" ? "history-ball-green" : "history-ball-red";
       const num = parseInt(code, 10);
-      const five = (num >= 1 && num <= 49) ? getFive(num, year) : "";
-      html += `<div class="history-ball-card ${cc}"><div class="history-ball-number">${escapeHtml(code)}</div><div class="history-ball-tag">${escapeHtml(zodiac || "")}/${escapeHtml(five)}</div></div>`;
+      const isValid = !isNaN(num) && num >= 1 && num <= 49;
+      const waveColor = isValid ? getNumberWave(num) : "green";
+      const cc = waveColor === "blue" ? "history-ball-blue" : waveColor === "green" ? "history-ball-green" : "history-ball-red";
+      const five = isValid ? getNumberWuxing(num, year) : "?";
+      const zodiac = (zodiacs && zodiacs[i]) || (isValid ? getNumberZodiac(num) : "");
+      html += `<div class="history-ball-card ${cc}"><div class="history-ball-number">${escapeHtml(code)}</div><div class="history-ball-tag">${escapeHtml(zodiac)}/${escapeHtml(five)}</div></div>`;
       if (i === 5) html += '<span class="history-plus-sign">+</span>';
     });
     return html;
@@ -767,8 +788,8 @@
         let ballsHtml = "";
         if (item.openCode && item.openCode.trim()) {
           const codes = item.openCode.split(",").map(c => escapeHtml(c.trim()));
-          const waves = (item.wave || "").split(",").map(w => escapeHtml(w.trim()));
-          const zodiacs = (item.zodiac || "").split(",").map(z => escapeHtml(z.trim()));
+          const waves = (item.wave || "").split(",").map(w => w.trim());
+          const zodiacs = (item.zodiac || "").split(",").map(z => z.trim());
           const recordYear = historyYearLoaded || CURRENT_YEAR;
           ballsHtml = renderBallsHTML(codes, waves, zodiacs, recordYear);
         } else {
@@ -1049,7 +1070,7 @@
       if (DOM.drawer_overlay) DOM.drawer_overlay.addEventListener("click", () => DrawerSystem.close());
       fetchLottery(); runAnalysis(); initAutoRefresh(); initParticles();
       window.addEventListener("beforeunload", () => { terminateWorker(); if (countdownTimer) clearInterval(countdownTimer); });
-      console.log("%c✅ 神码��现 v" + APP_VERSION + " 无直播版已加载", "color:#00ffea;font-weight:bold");
+      console.log("%c✅ 神码再现 v" + APP_VERSION + " (修复开奖显示) 已加载", "color:#00ffea;font-weight:bold");
     } catch (e) { console.error("初始化失败:", e); alert("页面初始化出错，请刷新重试。错误: " + e.message); }
   }
 
